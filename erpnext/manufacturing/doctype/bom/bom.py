@@ -2222,8 +2222,9 @@ def item_query(doctype, txt, searchfield, start, page_len, filters):
 
 		barcodes = frappe.get_all(
 			"Item Barcode",
-			fields=["distinct parent as item_code"],
+			fields=["parent as item_code"],
 			filters={"barcode": ("like", f"%{txt}%")},
+			distinct=True,
 		)
 
 		barcodes = [d.item_code for d in barcodes]

@@ -487,6 +487,22 @@ class TestBOM(ERPNextTestSuite):
 		self.assertTrue(0 < len(filtered) <= 3, msg="Item filtering showing excessive results")
 
 	@timeout
+	def test_bom_item_query_supports_barcode_matches(self):
+		barcode = f"BOM-BARCODE-{frappe.generate_hash(length=8)}"
+		item = make_item(properties={"is_stock_item": 1}, barcode=barcode)
+
+		results = item_query(
+			doctype="Item",
+			txt=barcode,
+			searchfield="name",
+			start=0,
+			page_len=20,
+			filters={"is_stock_item": 1},
+		)
+
+		self.assertIn(item.name, [row[0] for row in results])
+
+	@timeout
 	def test_exclude_exploded_items_from_bom(self):
 		bom_no = get_default_bom()
 		new_bom = frappe.copy_doc(frappe.get_doc("BOM", bom_no))
