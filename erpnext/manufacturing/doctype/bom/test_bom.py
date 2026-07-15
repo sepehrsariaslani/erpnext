@@ -482,6 +482,14 @@ class TestBOM(ERPNextTestSuite):
 		self.assertEqual(flt(bom_doc.cost_allocation, 6), 150.0)
 
 	@timeout
+	def test_has_scrap_items_detects_legacy_secondary_rows(self):
+		bom_doc = frappe.new_doc("BOM")
+		self.assertFalse(bom_doc.has_scrap_items())
+
+		bom_doc.append("secondary_items", {"is_legacy": 1})
+		self.assertTrue(bom_doc.has_scrap_items())
+
+	@timeout
 	def test_bom_item_query(self):
 		query = partial(
 			item_query,

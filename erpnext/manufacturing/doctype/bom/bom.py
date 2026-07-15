@@ -1131,6 +1131,9 @@ class BOM(WebsiteGenerator):
 			msg = f"Item: {frappe.bold(self.item)} with Stock UOM: {frappe.bold(self.uom)} can't have fractional process loss qty as UOM {frappe.bold(self.uom)} is a whole Number."
 			frappe.throw(msg, title=_("Invalid Process Loss Configuration"))
 
+	def has_scrap_items(self):
+		return any(d.get("type") == "Scrap" or d.get("is_legacy") for d in self.get("secondary_items"))
+
 
 def get_bom_item_rate(args, bom_doc):
 	if bom_doc.rm_cost_as_per == "Valuation Rate":
