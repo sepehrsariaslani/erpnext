@@ -151,6 +151,7 @@ class BootStrapTestData:
 		frappe.db.commit()  # nosemgrep
 
 	def make_master_data(self):
+		self.update_system_settings()
 		self.make_fiscal_year()
 		self.make_holiday_list()
 		self.make_company()
@@ -203,7 +204,6 @@ class BootStrapTestData:
 		self.update_support_settings()
 		self.update_selling_settings()
 		self.update_stock_settings()
-		self.update_system_settings()
 
 		frappe.db.commit()  # nosemgrep
 
@@ -462,6 +462,7 @@ class BootStrapTestData:
 				"new_password": "Eastern_43A1W",
 				"roles": [
 					{"doctype": "Has Role", "parentfield": "roles", "role": "_Test Role"},
+					{"doctype": "Has Role", "parentfield": "roles", "role": "Accounts User"},
 					{"doctype": "Has Role", "parentfield": "roles", "role": "System Manager"},
 				],
 			},
@@ -902,6 +903,13 @@ class BootStrapTestData:
 			},
 			{
 				"doctype": "Supplier",
+				"supplier_name": "_Test Another Supplier USD",
+				"supplier_group": "_Test Supplier Group",
+				"default_currency": "USD",
+				"accounts": [{"company": "_Test Company", "account": "_Test Payable USD - _TC"}],
+			},
+			{
+				"doctype": "Supplier",
 				"supplier_name": "_Test Supplier With Tax Category",
 				"supplier_group": "_Test Supplier Group",
 				"tax_category": "_Test Tax Category 1",
@@ -947,6 +955,13 @@ class BootStrapTestData:
 			{
 				"company": "_Test Company",
 				"cost_center_name": "_Test Write Off Cost Center",
+				"doctype": "Cost Center",
+				"is_group": 0,
+				"parent_cost_center": "_Test Company - _TC",
+			},
+			{
+				"company": "_Test Company",
+				"cost_center_name": "Sub",
 				"doctype": "Cost Center",
 				"is_group": 0,
 				"parent_cost_center": "_Test Company - _TC",
@@ -2989,6 +3004,9 @@ class ERPNextTestSuite(unittest.TestCase):
 
 	def tearDown(self):
 		frappe.db.rollback()
+		frappe.local.request_cache.clear()
+		if hasattr(frappe.local, "future_sle"):
+			frappe.local.future_sle.clear()
 
 	def load_test_records(self, doctype):
 		if doctype not in self.globalTestRecords:

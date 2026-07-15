@@ -131,8 +131,6 @@ class ReceivablePayableReport:
 			self.fetch_ple_in_buffered_cursor()
 		elif self.ple_fetch_method == "UnBuffered Cursor":
 			self.fetch_ple_in_unbuffered_cursor()
-		elif self.ple_fetch_method == "Raw SQL":
-			self.fetch_ple_in_sql_procedures()
 
 		# Build delivery note map against all sales invoices
 		self.build_delivery_note_map()
@@ -267,10 +265,12 @@ class ReceivablePayableReport:
 
 		# Build and use a separate row for Employee Advances.
 		# This allows Payments or Journals made against Emp Advance to be processed.
-		if (
-			not row
-			and ple.against_voucher_type == "Employee Advance"
-			and self.filters.handle_employee_advances
+		if not row and (
+			(ple.against_voucher_type == "Employee Advance" and self.filters.handle_employee_advances)
+			or (
+				ple.against_voucher_type == "Exchange Rate Revaluation"
+				and self.filters.for_revaluation_journals
+			)
 		):
 			_d = self.build_voucher_dict(ple)
 			_d.voucher_type = ple.against_voucher_type
@@ -322,81 +322,6 @@ class ReceivablePayableReport:
 			else:
 				row.paid -= amount
 				row.paid_in_account_currency -= amount_in_account_currency
-
-	def fetch_ple_in_sql_procedures(self):
-		self.proc = InitSQLProceduresForAR()
-
-		build_balance = f"""
-		begin not atomic
-		declare done boolean default false;
-		declare rec1 row type of `{self.proc._row_def_table_name}`;
-		declare ple cursor for {self.ple_query.get_sql()};
-		declare continue handler for not found set done = true;
-
-		open ple;
-		fetch ple into rec1;
-		while not done do
-			call {self.proc.init_procedure_name}(rec1);
-			fetch ple into rec1;
-		end while;
-		close ple;
-
-		set done = false;
-		open ple;
-		fetch ple into rec1;
-		while not done do
-			call {self.proc.allocate_procedure_name}(rec1);
-			fetch ple into rec1;
-		end while;
-		close ple;
-		end;
-		"""
-		frappe.db.sql(build_balance)
-
-		balances = frappe.db.sql(
-			f"""select
-			name,
-			voucher_type,
-			voucher_no,
-			party,
-			party_account `account`,
-			posting_date,
-			account_currency,
-			cost_center,
-			project,
-			sum(invoiced) `invoiced`,
-			sum(paid) `paid`,
-			sum(credit_note) `credit_note`,
-			sum(invoiced) - sum(paid) - sum(credit_note) `outstanding`,
-			sum(invoiced_in_account_currency) `invoiced_in_account_currency`,
-			sum(paid_in_account_currency) `paid_in_account_currency`,
-			sum(credit_note_in_account_currency) `credit_note_in_account_currency`,
-			sum(invoiced_in_account_currency) - sum(paid_in_account_currency) - sum(credit_note_in_account_currency) `outstanding_in_account_currency`
-			from `{self.proc._voucher_balance_name}` group by name order by posting_date;""",
-			as_dict=True,
-		)
-		for x in balances:
-			if self.filters.get("ignore_accounts"):
-				key = (x.voucher_type, x.voucher_no, x.party)
-			else:
-				key = (x.account, x.voucher_type, x.voucher_no, x.party)
-
-			_d = self.build_voucher_dict(x)
-			for field in [
-				"invoiced",
-				"paid",
-				"credit_note",
-				"outstanding",
-				"invoiced_in_account_currency",
-				"paid_in_account_currency",
-				"credit_note_in_account_currency",
-				"outstanding_in_account_currency",
-				"cost_center",
-				"project",
-			]:
-				_d[field] = x.get(field)
-
-			self.voucher_balance[key] = _d
 
 	def update_sub_total_row(self, row, party):
 		total_row = self.total_row_map.get(party)
@@ -1005,7 +930,27 @@ class ReceivablePayableReport:
 		if self.filters.project:
 			self.qb_selection_filter.append(self.ple.project.isin(self.filters.project))
 
+		self.add_user_permission_filters()
+
 		self.add_accounting_dimensions_filters()
+
+	def add_user_permission_filters(self):
+		# Party is a dynamic link, so match conditions cannot auto-apply Customer/Supplier user permissions
+		from frappe.core.doctype.user_permission.user_permission import get_user_permissions
+		from frappe.permissions import get_allowed_docs_for_doctype
+
+		user_permissions = get_user_permissions()
+		if not user_permissions:
+			return
+
+		for party_type in self.party_type:
+			if party_type not in user_permissions:
+				continue
+
+			allowed_parties = get_allowed_docs_for_doctype(user_permissions[party_type], party_type)
+			self.qb_selection_filter.append(
+				(self.ple.party_type != party_type) | self.ple.party.isin(allowed_parties or [""])
+			)
 
 	def get_cost_center_conditions(self):
 		cost_center_list = get_cost_centers_with_children(self.filters.cost_center)
@@ -1206,6 +1151,7 @@ class ReceivablePayableReport:
 			fieldtype="Dynamic Link",
 			options="party_type",
 			width=180,
+			sticky=(self.party_naming_by not in ["Naming Series", "Auto Name"]),
 		)
 		if self.account_type == "Receivable":
 			label = _("Receivable Account")
@@ -1220,6 +1166,7 @@ class ReceivablePayableReport:
 			fieldtype="Link",
 			options="Account",
 			width=180,
+			sticky=True,
 		)
 
 		if self.party_naming_by == "Naming Series":
@@ -1233,6 +1180,7 @@ class ReceivablePayableReport:
 				label=label,
 				fieldname=fieldname,
 				fieldtype="Data",
+				sticky=True,
 			)
 
 		if self.account_type == "Receivable":
@@ -1317,7 +1265,7 @@ class ReceivablePayableReport:
 		if self.filters.show_remarks:
 			self.add_column(label=_("Remarks"), fieldname="remarks", fieldtype="Text", width=200)
 
-	def add_column(self, label, fieldname=None, fieldtype="Currency", options=None, width=120):
+	def add_column(self, label, fieldname=None, fieldtype="Currency", options=None, width=120, sticky=False):
 		if not fieldname:
 			fieldname = scrub(label)
 		if fieldtype == "Currency":
@@ -1326,7 +1274,14 @@ class ReceivablePayableReport:
 			width = 90
 
 		self.columns.append(
-			dict(label=label, fieldname=fieldname, fieldtype=fieldtype, options=options, width=width)
+			dict(
+				label=label,
+				fieldname=fieldname,
+				fieldtype=fieldtype,
+				options=options,
+				width=width,
+				sticky=sticky,
+			)
 		)
 
 	def setup_ageing_columns(self):
@@ -1400,120 +1355,3 @@ def get_party_group_with_children(party, party_groups):
 			frappe.throw(_("{0}: {1} does not exist").format(group_dtype, d))
 
 	return list(set(all_party_groups))
-
-
-class InitSQLProceduresForAR:
-	"""
-	Initialize SQL Procedures, Functions and Temporary tables to build Receivable / Payable report
-	"""
-
-	_varchar_type = get_definition("Data")
-	_currency_type = get_definition("Currency")
-	# Temporary Tables
-	_voucher_balance_name = "_ar_voucher_balance"
-	_voucher_balance_definition = f"""
-		create temporary table `{_voucher_balance_name}`(
-		name {_varchar_type},
-		voucher_type {_varchar_type},
-		voucher_no {_varchar_type},
-		party {_varchar_type},
-		party_account {_varchar_type},
-		posting_date date,
-		account_currency {_varchar_type},
-		cost_center {_varchar_type},
-		project {_varchar_type},
-		invoiced {_currency_type},
-		paid {_currency_type},
-		credit_note {_currency_type},
-		invoiced_in_account_currency {_currency_type},
-		paid_in_account_currency {_currency_type},
-		credit_note_in_account_currency {_currency_type}) engine=memory;
-	"""
-
-	_row_def_table_name = "_ar_ple_row"
-	_row_def_table_definition = f"""
-		create temporary table `{_row_def_table_name}`(
-		name {_varchar_type},
-		account {_varchar_type},
-		voucher_type {_varchar_type},
-		voucher_no {_varchar_type},
-		against_voucher_type {_varchar_type},
-		against_voucher_no {_varchar_type},
-		party_type {_varchar_type},
-		cost_center {_varchar_type},
-		project {_varchar_type},
-		party {_varchar_type},
-		posting_date date,
-		due_date date,
-		account_currency {_varchar_type},
-		amount {_currency_type},
-		amount_in_account_currency {_currency_type}) engine=memory;
-	"""
-
-	# Procedures
-	init_procedure_name = "ar_init_tmp_table"
-	init_procedure_sql = f"""
-	create procedure ar_init_tmp_table(in ple row type of `{_row_def_table_name}`)
-	begin
-		if not exists (select name from `{_voucher_balance_name}` where name = sha1(concat_ws(',', ple.account, ple.against_voucher_type, ple.against_voucher_no, ple.party)))
-		then
-			insert into `{_voucher_balance_name}` values (sha1(concat_ws(',', ple.account, ple.against_voucher_type, ple.against_voucher_no, ple.party)), ple.voucher_type, ple.voucher_no, ple.party, ple.account, ple.posting_date, ple.account_currency, ple.cost_center, ple.project, 0, 0, 0, 0, 0, 0);
-		end if;
-	end;
-	"""
-
-	allocate_procedure_name = "ar_allocate_to_tmp_table"
-	allocate_procedure_sql = f"""
-	create procedure ar_allocate_to_tmp_table(in ple row type of `{_row_def_table_name}`)
-	begin
-		declare invoiced {_currency_type} default 0;
-		declare invoiced_in_account_currency {_currency_type} default 0;
-		declare paid {_currency_type} default 0;
-		declare paid_in_account_currency {_currency_type} default 0;
-		declare credit_note {_currency_type} default 0;
-		declare credit_note_in_account_currency {_currency_type} default 0;
-
-
-		if ple.amount > 0 then
-			if (ple.voucher_type in ("Journal Entry", "Payment Entry") and (ple.voucher_no != ple.against_voucher_no)) then
-				set paid = -1 * ple.amount;
-				set paid_in_account_currency = -1 * ple.amount_in_account_currency;
-			else
-				set invoiced = ple.amount;
-				set invoiced_in_account_currency = ple.amount_in_account_currency;
-			end if;
-		else
-
-		if ple.voucher_type in ("Sales Invoice", "Purchase Invoice") then
-			if (ple.voucher_no = ple.against_voucher_no) then
-				set paid = -1 * ple.amount;
-				set paid_in_account_currency = -1 * ple.amount_in_account_currency;
-			else
-				set credit_note = -1 * ple.amount;
-				set credit_note_in_account_currency = -1 * ple.amount_in_account_currency;
-		end if;
-		else
-			set paid = -1 * ple.amount;
-			set paid_in_account_currency = -1 * ple.amount_in_account_currency;
-		end if;
-
-		end if;
-
-		insert into `{_voucher_balance_name}` values (sha1(concat_ws(',', ple.account, ple.voucher_type, ple.voucher_no, ple.party)), ple.against_voucher_type, ple.against_voucher_no, ple.party, ple.account, ple.posting_date, ple.account_currency,'', '', invoiced, paid, 0, invoiced_in_account_currency, paid_in_account_currency, 0);
-	end;
-	"""
-
-	def __init__(self):
-		existing_procedures = frappe.db.get_routines()
-
-		if self.init_procedure_name not in existing_procedures:
-			frappe.db.sql(self.init_procedure_sql)
-
-		if self.allocate_procedure_name not in existing_procedures:
-			frappe.db.sql(self.allocate_procedure_sql)
-
-		frappe.db.sql(f"drop table if exists `{self._voucher_balance_name}`")
-		frappe.db.sql(self._voucher_balance_definition)
-
-		frappe.db.sql(f"drop table if exists `{self._row_def_table_name}`")
-		frappe.db.sql(self._row_def_table_definition)

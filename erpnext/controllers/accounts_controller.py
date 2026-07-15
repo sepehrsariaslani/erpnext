@@ -8,10 +8,10 @@ from collections import defaultdict
 import frappe
 from frappe import _, bold, qb, throw
 from frappe.contacts.doctype.address.address import get_address_display
-from frappe.model.workflow import get_workflow_name, is_transition_condition_satisfied
+from frappe.model.workflow import get_workflow_name
 from frappe.query_builder import Criterion, DocType
 from frappe.query_builder.custom import ConstantColumn
-from frappe.query_builder.functions import Abs, Sum
+from frappe.query_builder.functions import Abs, IfNull, Sum
 from frappe.utils import (
 	add_days,
 	add_months,
@@ -51,12 +51,11 @@ from erpnext.accounts.utils import (
 	create_gain_loss_journal,
 	get_account_currency,
 	get_currency_precision,
+	get_fiscal_year,
 	get_fiscal_years,
 	validate_fiscal_year,
 )
-from erpnext.accounts.utils import (
-	get_advance_payment_doctypes as _get_advance_payment_doctypes,
-)
+from erpnext.accounts.utils import get_advance_payment_doctypes as _get_advance_payment_doctypes
 from erpnext.buying.utils import update_last_purchase_rate
 from erpnext.controllers.print_settings import (
 	set_print_templates_for_item_table,
@@ -71,6 +70,8 @@ from erpnext.stock.get_item_details import (
 	NOT_APPLICABLE_TAX,
 	ItemDetailsCtx,
 	_get_item_tax_template,
+	_get_item_tax_template_from_item_group,
+	get_bin_details,
 	get_conversion_factor,
 	get_item_details,
 	get_item_tax_map,
@@ -139,6 +140,26 @@ class AccountsController(TransactionBase):
 			if self.doctype in relevant_docs:
 				self.set_payment_schedule()
 
+	def before_insert(self):
+		self.clear_clearance_date_on_amend()
+
+	def clear_clearance_date_on_amend(self):
+		"""Drop the bank reconciliation clearance date copied over while amending.
+
+		The framework copies `no_copy` fields when amending, so a reconciled
+		voucher would carry a stale clearance date into its amendment even though
+		the linked bank transaction gets unreconciled on cancellation.
+		"""
+		if not self.get("amended_from"):
+			return
+
+		if self.meta.has_field("clearance_date"):
+			self.clearance_date = None
+
+		for payment in self.get("payments") or []:
+			if payment.meta.has_field("clearance_date"):
+				payment.clearance_date = None
+
 	def on_update(self):
 		from erpnext.controllers.taxes_and_totals import process_item_wise_tax_details
 
@@ -180,7 +201,7 @@ class AccountsController(TransactionBase):
 		if not get_meta(self.doctype).has_field("outstanding_amount"):
 			return
 
-		if self.get("is_return") and self.return_against and not self.get("is_pos"):
+		if self.get("is_return") and self.return_against and not (self.get("is_pos") or self.get("is_paid")):
 			against_voucher_outstanding = frappe.get_value(
 				self.doctype, self.return_against, "outstanding_amount"
 			)
@@ -327,6 +348,7 @@ class AccountsController(TransactionBase):
 		# Determine if drop ship applies
 		is_drop_ship = self.doctype in {
 			"Purchase Order",
+			"Purchase Invoice",
 			"Sales Order",
 			"Sales Invoice",
 		} and self.is_drop_ship(self.items)
@@ -746,21 +768,29 @@ class AccountsController(TransactionBase):
 			self.calculate_contribution()
 
 	def validate_date_with_fiscal_year(self):
-		if self.meta.get_field("fiscal_year"):
-			date_field = None
-			if self.meta.get_field("posting_date"):
-				date_field = "posting_date"
-			elif self.meta.get_field("transaction_date"):
-				date_field = "transaction_date"
+		date_field = None
+		if self.meta.get_field("posting_date"):
+			date_field = "posting_date"
+		elif self.meta.get_field("transaction_date"):
+			date_field = "transaction_date"
 
-			if date_field and self.get(date_field):
-				validate_fiscal_year(
-					self.get(date_field),
-					self.fiscal_year,
-					self.company,
-					self.meta.get_label(date_field),
-					self,
-				)
+		if not date_field or not self.get(date_field):
+			return
+
+		if self.meta.get_field("fiscal_year"):
+			validate_fiscal_year(
+				self.get(date_field),
+				self.fiscal_year,
+				self.company,
+				self.meta.get_label(date_field),
+				self,
+			)
+		else:
+			get_fiscal_year(
+				self.get(date_field),
+				company=self.company,
+				label=self.meta.get_label(date_field),
+			)
 
 	def validate_party_accounts(self):
 		if self.doctype not in ("Sales Invoice", "Purchase Invoice"):
@@ -2683,7 +2713,7 @@ class AccountsController(TransactionBase):
 					payment_schedule["credit_days"] = cint(schedule.credit_days)
 					payment_schedule["credit_months"] = cint(schedule.credit_months)
 
-				if schedule.discount_validity_based_on:
+				if schedule.discount_validity_based_on and flt(schedule.discount):
 					payment_schedule["discount_date"] = get_discount_date(schedule, posting_date)
 					payment_schedule["discount_validity_based_on"] = schedule.discount_validity_based_on
 					payment_schedule["discount_validity"] = cint(schedule.discount_validity)
@@ -2725,6 +2755,8 @@ class AccountsController(TransactionBase):
 			return
 
 		for d in self.get("payment_schedule"):
+			if not flt(d.discount):
+				d.discount_date = None
 			d.validate_from_to_dates("discount_date", "due_date")
 			if self.doctype in ["Sales Order", "Quotation"] and getdate(d.due_date) < getdate(
 				self.transaction_date
@@ -2896,7 +2928,9 @@ class AccountsController(TransactionBase):
 		advance_entry.party_type = primary_party_type
 		advance_entry.party = primary_party
 		advance_entry.cost_center = self.cost_center or erpnext.get_default_cost_center(self.company)
-		advance_entry.is_advance = "Yes"
+		# For returns the direction is reversed, so this entry cannot be an advance
+		# (JE validation: Supplier advance must be debit, Customer advance must be credit)
+		advance_entry.is_advance = "No" if self.is_return else "Yes"
 
 		# Update dimensions
 		dimensions_dict = frappe._dict()
@@ -2928,35 +2962,26 @@ class AccountsController(TransactionBase):
 				)
 			)
 
-			# Convert outstanding amount from secondary to primary account currency, if needed
+			outstanding_amount = abs(self.outstanding_amount)
+			os_in_default_currency = outstanding_amount * exc_rate_secondary_to_default
+			os_in_primary_currency = outstanding_amount * exc_rate_secondary_to_primary
 
-			os_in_default_currency = self.outstanding_amount * exc_rate_secondary_to_default
-			os_in_primary_currency = self.outstanding_amount * exc_rate_secondary_to_primary
+			# SI normal and PI return → reconciliation is credit; SI return and PI normal → debit
+			reconciliation_is_credit = (self.doctype == "Sales Invoice") != bool(self.is_return)
+			_set_je_amounts(
+				reconcilation_entry, outstanding_amount, os_in_default_currency, reconciliation_is_credit
+			)
+			_set_je_amounts(
+				advance_entry, os_in_primary_currency, os_in_default_currency, not reconciliation_is_credit
+			)
 
-			if self.doctype == "Sales Invoice":
-				# Calculate credit and debit values for reconciliation and advance entries
-				reconcilation_entry.credit_in_account_currency = self.outstanding_amount
-				reconcilation_entry.credit = os_in_default_currency
-
-				advance_entry.debit_in_account_currency = os_in_primary_currency
-				advance_entry.debit = os_in_default_currency
-			else:
-				advance_entry.credit_in_account_currency = os_in_primary_currency
-				advance_entry.credit = os_in_default_currency
-
-				reconcilation_entry.debit_in_account_currency = self.outstanding_amount
-				reconcilation_entry.debit = os_in_default_currency
-
-			# Set exchange rates for entries
 			reconcilation_entry.exchange_rate = exc_rate_secondary_to_default
 			advance_entry.exchange_rate = exc_rate_primary_to_default
 		else:
-			if self.doctype == "Sales Invoice":
-				reconcilation_entry.credit_in_account_currency = self.outstanding_amount
-				advance_entry.debit_in_account_currency = self.outstanding_amount
-			else:
-				advance_entry.credit_in_account_currency = self.outstanding_amount
-				reconcilation_entry.debit_in_account_currency = self.outstanding_amount
+			outstanding_amount = abs(self.outstanding_amount)
+			reconciliation_is_credit = (self.doctype == "Sales Invoice") != bool(self.is_return)
+			_set_je_amounts(reconcilation_entry, outstanding_amount, is_credit=reconciliation_is_credit)
+			_set_je_amounts(advance_entry, outstanding_amount, is_credit=not reconciliation_is_credit)
 
 		jv.multi_currency = multi_currency
 		jv.append("accounts", reconcilation_entry)
@@ -3486,8 +3511,18 @@ def get_common_query(
 				common_filter_conditions.append(payment_entry.cost_center == condition["cost_center"])
 
 			if condition.get("accounting_dimensions"):
+				apply_strict_user_permissions = frappe.get_system_settings("apply_strict_user_permissions")
 				for field, val in condition.get("accounting_dimensions").items():
-					common_filter_conditions.append(payment_entry[field] == val)
+					if isinstance(val, list | tuple | set):
+						value_condition = payment_entry[field].isin(val)
+						if apply_strict_user_permissions:
+							common_filter_conditions.append(value_condition)
+						else:
+							common_filter_conditions.append(
+								(IfNull(payment_entry[field], "") == "") | value_condition
+							)
+					else:
+						common_filter_conditions.append(payment_entry[field] == val)
 
 			if condition.get("minimum_payment_amount"):
 				common_filter_conditions.append(
@@ -3610,12 +3645,11 @@ def get_payment_term_details(
 	term_details.outstanding = term_details.payment_amount
 	term_details.base_outstanding = term_details.base_payment_amount
 
-	if bill_date:
-		term_details.due_date = get_due_date(term, bill_date)
-		term_details.discount_date = get_discount_date(term, bill_date)
-	elif posting_date:
-		term_details.due_date = get_due_date(term, posting_date)
-		term_details.discount_date = get_discount_date(term, posting_date)
+	has_discount = flt(term.get("discount"))
+	date = bill_date or posting_date
+	if date:
+		term_details.due_date = get_due_date(term, date)
+		term_details.discount_date = get_discount_date(term, date) if has_discount else None
 
 	if getdate(term_details.due_date) < getdate(posting_date):
 		term_details.due_date = posting_date
@@ -3672,12 +3706,28 @@ def set_child_tax_template_and_map(item, child_item, parent_doc):
 		}
 	)
 
-	child_item.item_tax_template = _get_item_tax_template(ctx, item.taxes)
+	item_tax_template = _get_item_tax_template(ctx, item.taxes)
+
+	if not item_tax_template:
+		item_tax_template = _get_item_tax_template_from_item_group(ctx, item.item_group)
+
+	child_item.item_tax_template = item_tax_template
 	child_item.item_tax_rate = get_item_tax_map(
 		doc=parent_doc,
 		tax_template=child_item.item_tax_template,
 		as_json=True,
 	)
+
+
+def _set_je_amounts(entry, amount, default_amount=None, is_credit=True):
+	if is_credit:
+		entry.credit_in_account_currency = amount
+		if default_amount is not None:
+			entry.credit = default_amount
+	else:
+		entry.debit_in_account_currency = amount
+		if default_amount is not None:
+			entry.debit = default_amount
 
 
 def add_taxes_from_tax_template(child_item, parent_doc, db_insert=True):
@@ -3730,6 +3780,7 @@ def set_order_defaults(parent_doctype, parent_doctype_name, child_doctype, child
 	child_item.warehouse = get_item_warehouse_(p_doc, item, overwrite_warehouse=True)
 	conversion_factor = flt(get_conversion_factor(item.item_code, child_item.uom).get("conversion_factor"))
 	child_item.conversion_factor = flt(trans_item.get("conversion_factor")) or conversion_factor
+	child_item.update(get_bin_details(child_item.item_code, child_item.warehouse, p_doc.get("company")))
 
 	if child_doctype in ["Purchase Order Item", "Supplier Quotation Item"]:
 		# Initialized value will update in parent validation
@@ -3839,7 +3890,9 @@ def validate_and_delete_children(parent, data, ordered_item=None) -> bool:
 
 
 @frappe.whitelist()
-def update_child_qty_rate(parent_doctype, trans_items, parent_doctype_name, child_docname="items"):
+def update_child_qty_rate(
+	parent_doctype: str, trans_items: str, parent_doctype_name: str, child_docname: str = "items"
+):
 	from erpnext.buying.doctype.supplier_quotation.supplier_quotation import get_purchased_items
 	from erpnext.selling.doctype.quotation.quotation import get_ordered_items
 
@@ -3865,14 +3918,12 @@ def update_child_qty_rate(parent_doctype, trans_items, parent_doctype_name, chil
 		current_state = doc.get(workflow_doc.workflow_state_field)
 		roles = frappe.get_roles()
 
-		transitions = []
-		for transition in workflow_doc.transitions:
-			if transition.next_state == current_state and transition.allowed in roles:
-				if not is_transition_condition_satisfied(transition, doc):
-					continue
-				transitions.append(transition.as_dict())
+		allowed = any(
+			state.state == current_state and (not state.allow_edit or state.allow_edit in roles)
+			for state in workflow_doc.states
+		)
 
-		if not transitions:
+		if not allowed:
 			frappe.throw(
 				_("You are not allowed to update as per the conditions set in {} Workflow.").format(
 					get_link_to_form("Workflow", workflow)
@@ -3901,8 +3952,8 @@ def update_child_qty_rate(parent_doctype, trans_items, parent_doctype_name, chil
 			)
 
 		qty_limits = {
-			"Sales Order": ("delivered_qty", _("Cannot set quantity less than delivered quantity")),
-			"Purchase Order": ("received_qty", _("Cannot set quantity less than received quantity")),
+			"Sales Order": ("delivered_qty", _("Cannot set quantity less than delivered quantity.")),
+			"Purchase Order": ("received_qty", _("Cannot set quantity less than received quantity.")),
 		}
 
 		if parent_doctype in qty_limits:
@@ -4132,6 +4183,7 @@ def update_child_qty_rate(parent_doctype, trans_items, parent_doctype_name, chil
 					#  if rate is greater than price_list_rate, set margin
 					#  or set discount
 					child_item.discount_percentage = 0
+					child_item.discount_amount = 0
 					child_item.margin_type = "Amount"
 					child_item.margin_rate_or_amount = flt(
 						child_item.rate - child_item.price_list_rate,
@@ -4139,14 +4191,11 @@ def update_child_qty_rate(parent_doctype, trans_items, parent_doctype_name, chil
 					)
 					child_item.rate_with_margin = child_item.rate
 				else:
-					child_item.discount_percentage = flt(
-						(1 - flt(child_item.rate) / flt(child_item.price_list_rate)) * 100.0,
-						child_item.precision("discount_percentage"),
-					)
-					child_item.discount_amount = flt(child_item.price_list_rate) - flt(child_item.rate)
 					child_item.margin_type = ""
 					child_item.margin_rate_or_amount = 0
-					child_item.rate_with_margin = 0
+					child_item.rate_with_margin = child_item.price_list_rate
+					child_item.discount_percentage = 0
+					child_item.discount_amount = flt(child_item.rate_with_margin) - flt(child_item.rate)
 
 		child_item.flags.ignore_validate_update_after_submit = True
 		if new_child_flag:
@@ -4199,7 +4248,7 @@ def update_child_qty_rate(parent_doctype, trans_items, parent_doctype_name, chil
 			if parent.is_old_subcontracting_flow:
 				if should_update_supplied_items(parent):
 					parent.update_reserved_qty_for_subcontract()
-					parent.create_raw_materials_supplied()
+					parent.create_raw_materials_supplied_or_received()
 				parent.save()
 			else:
 				if not parent.can_update_items():

@@ -80,6 +80,7 @@ class Company(NestedSet):
 		default_operating_cost_account: DF.Link | None
 		default_payable_account: DF.Link | None
 		default_provisional_account: DF.Link | None
+		default_purchase_price_variance_account: DF.Link | None
 		default_receivable_account: DF.Link | None
 		default_sales_contact: DF.Link | None
 		default_scrap_warehouse: DF.Link | None
@@ -1085,7 +1086,6 @@ def create_transaction_deletion_request(company):
 	tdr.reload()
 
 	tdr.submit()
-	tdr.start_deletion_tasks()
 
 	frappe.msgprint(
 		_("Transaction Deletion Document {0} has been triggered for company {1}").format(

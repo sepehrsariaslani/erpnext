@@ -20,8 +20,7 @@ from erpnext.tests.utils import ERPNextTestSuite
 
 class TestTaxWithholdingDetails(ERPNextTestSuite, AccountsTestMixin):
 	def setUp(self):
-		self.create_company()
-		self.clear_old_entries()
+		self.company = "_Test Company"
 		create_records()
 
 	def test_tax_withholding_for_customers(self):
@@ -40,7 +39,7 @@ class TestTaxWithholdingDetails(ERPNextTestSuite, AccountsTestMixin):
 
 		expected_values = [
 			[jv.name, "TCS", 0.075, 1000.75, 0.75, 1000.75],
-			["", "TCS", 0.075, 0, 0.75, 0],
+			["", "TCS", 0.075, None, 0.75, None],
 			[si.name, "TCS", 0.075, 1000.0, 0.75, 1000.75],
 		]
 		self.check_expected_values(result, expected_values)
@@ -124,7 +123,7 @@ class TestTaxWithholdingDetails(ERPNextTestSuite, AccountsTestMixin):
 			voucher_expected_values = expected_values[i]
 			voucher_actual_values = (
 				voucher.ref_no,
-				voucher.section_code,
+				voucher.tax_withholding_category,
 				voucher.rate,
 				voucher.base_total,
 				voucher.tax_amount,

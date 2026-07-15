@@ -208,6 +208,7 @@ class PaymentEntry(AccountsController):
 		self.make_gl_entries()
 		self.update_outstanding_amounts()
 		self.set_status()
+		self.trigger_invoice_update_for_subscriptions()
 
 	def validate_for_repost(self):
 		validate_docs_for_voucher_types(["Payment Entry"])
@@ -314,6 +315,7 @@ class PaymentEntry(AccountsController):
 		self.update_outstanding_amounts()
 		self.delink_advance_entry_references()
 		self.set_status()
+		self.trigger_invoice_update_for_subscriptions()
 
 	def update_payment_requests(self, cancel=False):
 		from erpnext.accounts.doctype.payment_request.payment_request import (
@@ -504,6 +506,19 @@ class PaymentEntry(AccountsController):
 			if reference.reference_doctype in ("Sales Invoice", "Purchase Invoice"):
 				doc = frappe.get_lazy_doc(reference.reference_doctype, reference.reference_name)
 				doc.delink_advance_entries(self.name)
+
+	def trigger_invoice_update_for_subscriptions(self):
+		invoice_names = set()
+		for ref in self.references:
+			if ref.reference_doctype in ("Sales Invoice", "Purchase Invoice"):
+				invoice_names.add((ref.reference_doctype, ref.reference_name))
+
+		for doctype, name in invoice_names:
+			try:
+				doc = frappe.get_doc(doctype, name)
+				doc.refresh_subscription_status()
+			except Exception:
+				frappe.log_error(_("Failed to update subscription status for {0} {1}").format(doctype, name))
 
 	def set_missing_values(self):
 		if self.payment_type == "Internal Transfer":
@@ -1191,9 +1206,9 @@ class PaymentEntry(AccountsController):
 				continue
 
 			if tax.add_deduct_tax == "Add":
-				included_taxes += tax.base_tax_amount
+				included_taxes += flt(tax.base_tax_amount)
 			else:
-				included_taxes -= tax.base_tax_amount
+				included_taxes -= flt(tax.base_tax_amount)
 
 		return included_taxes
 
@@ -1238,9 +1253,9 @@ class PaymentEntry(AccountsController):
 		else:
 			remarks = [
 				_("Amount {0} {1} {2} {3}").format(
-					_(self.paid_to_account_currency)
+					_(self.paid_from_account_currency)
 					if self.payment_type == "Receive"
-					else _(self.paid_from_account_currency),
+					else _(self.paid_to_account_currency),
 					self.paid_amount if self.payment_type == "Receive" else self.received_amount,
 					_("received from") if self.payment_type == "Receive" else _("paid to"),
 					self.party,
@@ -1256,7 +1271,7 @@ class PaymentEntry(AccountsController):
 			for d in self.get("references"):
 				if d.allocated_amount:
 					remarks.append(
-						_("Amount {0} {1} against {2} {3}").format(
+						_("Amount {0} {1} adjusted against {2} {3}").format(
 							_(self.party_account_currency),
 							d.allocated_amount,
 							d.reference_doctype,
@@ -1267,7 +1282,7 @@ class PaymentEntry(AccountsController):
 		for d in self.get("deductions"):
 			if d.amount:
 				remarks.append(
-					_("Amount {0} {1} deducted against {2}").format(
+					_("Amount {0} {1} as adjustment to {2}").format(
 						_(self.company_currency), d.amount, d.account
 					)
 				)
@@ -1297,7 +1312,13 @@ class PaymentEntry(AccountsController):
 		self.add_deductions_gl_entries(gl_entries)
 		self.add_tax_gl_entries(gl_entries)
 		add_regional_gl_entries(gl_entries, self)
+		self.set_transaction_currency_and_rate_in_gl_map(gl_entries)
 		return gl_entries
+
+	def set_transaction_currency_and_rate_in_gl_map(self, gl_entries):
+		for gle in gl_entries:
+			gle.setdefault("transaction_currency", self.transaction_currency)
+			gle.setdefault("transaction_exchange_rate", self.transaction_exchange_rate)
 
 	def make_gl_entries(self, cancel=0, adv_adj=0):
 		gl_entries = self.build_gl_map()
@@ -2279,6 +2300,9 @@ def get_outstanding_reference_documents(args, validate=False):
 	if args.get("party_type") == "Member":
 		return
 
+	if args.get("party_type") and args.get("party"):
+		frappe.has_permission(args["party_type"], "read", args["party"], throw=True)
+
 	if not args.get("get_outstanding_invoices") and not args.get("get_orders_to_be_billed"):
 		args["get_outstanding_invoices"] = True
 
@@ -2306,22 +2330,20 @@ def get_outstanding_reference_documents(args, validate=False):
 	# Get positive outstanding sales /purchase invoices
 	condition = ""
 	if args.get("voucher_type") and args.get("voucher_no"):
-		condition = " and voucher_type={} and voucher_no={}".format(
-			frappe.db.escape(args["voucher_type"]), frappe.db.escape(args["voucher_no"])
-		)
+		condition = f" and voucher_type={frappe.db.escape(args['voucher_type'])} and voucher_no={frappe.db.escape(args['voucher_no'])}"
 		common_filter.append(ple.voucher_type == args["voucher_type"])
 		common_filter.append(ple.voucher_no == args["voucher_no"])
 
 	# Add cost center condition
 	if args.get("cost_center"):
-		condition += " and cost_center='%s'" % args.get("cost_center")
+		condition += f" and cost_center={frappe.db.escape(args.get('cost_center'))}"
 		accounting_dimensions_filter.append(ple.cost_center == args.get("cost_center"))
 
 	# dynamic dimension filters
 	active_dimensions = get_dimensions()[0]
 	for dim in active_dimensions:
 		if args.get(dim.fieldname):
-			condition += f" and {dim.fieldname}='{args.get(dim.fieldname)}'"
+			condition += f" and {dim.fieldname}={frappe.db.escape(args.get(dim.fieldname))}"
 			accounting_dimensions_filter.append(ple[dim.fieldname] == args.get(dim.fieldname))
 
 	date_fields_dict = {
@@ -2330,18 +2352,19 @@ def get_outstanding_reference_documents(args, validate=False):
 	}
 
 	for fieldname, date_fields in date_fields_dict.items():
+		from_date = frappe.db.escape(str(args.get(date_fields[0]))) if args.get(date_fields[0]) else None
+		to_date = frappe.db.escape(str(args.get(date_fields[1]))) if args.get(date_fields[1]) else None
+
 		if args.get(date_fields[0]) and args.get(date_fields[1]):
-			condition += " and {} between '{}' and '{}'".format(
-				fieldname, args.get(date_fields[0]), args.get(date_fields[1])
-			)
+			condition += f" and {fieldname} between {from_date} and {to_date}"
 			posting_and_due_date.append(ple[fieldname][args.get(date_fields[0]) : args.get(date_fields[1])])
 		elif args.get(date_fields[0]):
 			# if only from date is supplied
-			condition += f" and {fieldname} >= '{args.get(date_fields[0])}'"
+			condition += f" and {fieldname} >= {from_date}"
 			posting_and_due_date.append(ple[fieldname].gte(args.get(date_fields[0])))
 		elif args.get(date_fields[1]):
 			# if only to date is supplied
-			condition += f" and {fieldname} <= '{args.get(date_fields[1])}'"
+			condition += f" and {fieldname} <= {to_date}"
 			posting_and_due_date.append(ple[fieldname].lte(args.get(date_fields[1])))
 
 	if args.get("company"):
@@ -2561,7 +2584,7 @@ def get_orders_to_be_billed(
 	active_dimensions = get_dimensions(True)[0]
 	for dim in active_dimensions:
 		if filters.get(dim.fieldname):
-			condition += f" and {dim.fieldname}='{filters.get(dim.fieldname)}'"
+			condition += f" and {dim.fieldname}={frappe.db.escape(filters.get(dim.fieldname))}"
 
 	if party_account_currency == company_currency:
 		grand_total_field = "base_grand_total"
@@ -2689,6 +2712,9 @@ def get_party_details(company, party_type, party, date, cost_center=None):
 	if not frappe.db.exists(party_type, party):
 		frappe.throw(_("{0} {1} does not exist").format(_(party_type), party))
 
+	ptype = "select" if frappe.only_has_select_perm(party_type) else "read"
+	frappe.has_permission(party_type, ptype, party, throw=True)
+
 	party_account = get_party_account(party_type, party, company)
 	account_currency = get_account_currency(party_account)
 	_party_name = "title" if party_type == "Shareholder" else party_type.lower() + "_name"
@@ -2696,7 +2722,7 @@ def get_party_details(company, party_type, party, date, cost_center=None):
 
 	if party_type in ["Customer", "Supplier"]:
 		party_bank_account = get_party_bank_account(party_type, party)
-		bank_account = get_default_company_bank_account(company, party_type, party)
+		bank_account = get_default_company_bank_account(company, party_type, party, ignore_permissions=False)
 
 	return {
 		"party_account": party_account,
@@ -2771,6 +2797,7 @@ def get_reference_details(
 ):
 	total_amount = outstanding_amount = exchange_rate = account = None
 
+	frappe.has_permission(reference_doctype, "read", reference_name, throw=True)
 	ref_doc = frappe.get_lazy_doc(reference_doctype, reference_name)
 	company_currency = ref_doc.get("company_currency") or erpnext.get_company_currency(ref_doc.company)
 
@@ -3016,7 +3043,7 @@ def get_payment_entry(
 				pe, doc, discount_amount, base_total_discount_loss, party_account_currency
 			)
 
-		pe.set_exchange_rate(ref_doc=doc)
+		pe.set_exchange_rate()
 		pe.set_amounts()
 
 	# If PE is created from PR directly, then no need to find open PRs for the references
@@ -3569,3 +3596,16 @@ def make_payment_order(source_name, target_doc=None):
 @erpnext.allow_regional
 def add_regional_gl_entries(gl_entries, doc):
 	return
+
+
+@frappe.whitelist()
+def get_linked_bank_transactions(payment_entry: str) -> list:
+	frappe.has_permission("Payment Entry", ptype="read", doc=payment_entry, throw=True)
+	return frappe.get_all(
+		"Bank Transaction Payments",
+		filters={
+			"payment_document": "Payment Entry",
+			"payment_entry": payment_entry,
+		},
+		pluck="parent",
+	)

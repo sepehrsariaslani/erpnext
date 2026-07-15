@@ -15,11 +15,11 @@ from erpnext.tests.utils import ERPNextTestSuite
 
 class TestExchangeRateRevaluation(ERPNextTestSuite, AccountsTestMixin):
 	def setUp(self):
-		self.create_company()
-		self.create_usd_receivable_account()
-		self.create_item()
-		self.create_customer()
-		self.clear_old_entries()
+		self.company = "_Test Company"
+		self.item = "_Test Item"
+		self.customer = "_Test Customer"
+		self.cost_center = "Main - _TC"
+		self.debtors_usd = "_Test Receivable USD - _TC"
 		self.set_system_and_company_settings()
 
 	def set_system_and_company_settings(self):
@@ -132,7 +132,8 @@ class TestExchangeRateRevaluation(ERPNextTestSuite, AccountsTestMixin):
 		err = err.save().submit()
 
 		# Create JV for ERR
-		self.assertTrue(err.check_journal_entry_condition())
+		ret = err.check_journal_and_reversal()
+		self.assertFalse(ret.get("journals_posted"))
 		err_journals = err.make_jv_entries()
 		je = frappe.get_doc("Journal Entry", err_journals.get("zero_balance_jv"))
 		je = je.submit()
@@ -221,7 +222,8 @@ class TestExchangeRateRevaluation(ERPNextTestSuite, AccountsTestMixin):
 		err = err.save().submit()
 
 		# Create JV for ERR
-		self.assertTrue(err.check_journal_entry_condition())
+		ret = err.check_journal_and_reversal()
+		self.assertFalse(ret.get("journals_posted"))
 		err_journals = err.make_jv_entries()
 		je = frappe.get_doc("Journal Entry", err_journals.get("zero_balance_jv"))
 		je = je.submit()

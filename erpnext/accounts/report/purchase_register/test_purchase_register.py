@@ -2,7 +2,7 @@
 # MIT License. See license.txt
 
 import frappe
-from frappe.utils import add_months, today
+from frappe.utils import add_months, flt, today
 
 from erpnext.accounts.report.purchase_register.purchase_register import execute
 from erpnext.stock.doctype.purchase_receipt.test_purchase_receipt import make_purchase_receipt
@@ -11,9 +11,6 @@ from erpnext.tests.utils import ERPNextTestSuite
 
 class TestPurchaseRegister(ERPNextTestSuite):
 	def test_purchase_register(self):
-		frappe.db.sql("delete from `tabPurchase Invoice` where company='_Test Company 6'")
-		frappe.db.sql("delete from `tabGL Entry` where company='_Test Company 6'")
-
 		filters = frappe._dict(company="_Test Company 6", from_date=add_months(today(), -1), to_date=today())
 
 		pi = make_purchase_invoice()
@@ -28,9 +25,6 @@ class TestPurchaseRegister(ERPNextTestSuite):
 		self.assertEqual(first_row.grand_total, 1100)
 
 	def test_purchase_register_ignores_tax_rows_from_other_doctype(self):
-		frappe.db.sql("delete from `tabPurchase Invoice` where company='_Test Company 6'")
-		frappe.db.sql("delete from `tabGL Entry` where company='_Test Company 6'")
-
 		filters = frappe._dict(company="_Test Company 6", from_date=add_months(today(), -1), to_date=today())
 
 		pi = make_purchase_invoice()
@@ -73,10 +67,36 @@ class TestPurchaseRegister(ERPNextTestSuite):
 		self.assertEqual(first_row.total_tax, 100)
 		self.assertEqual(first_row.grand_total, 1100)
 
-	def test_purchase_register_ledger_view(self):
-		frappe.db.sql("delete from `tabPurchase Invoice` where company='_Test Company 6'")
-		frappe.db.sql("delete from `tabGL Entry` where company='_Test Company 6'")
+	def test_purchase_currency_conversion(self):
+		usd_creditors = frappe.get_doc(
+			{
+				"doctype": "Account",
+				"account_name": "USD Creditors",
+				"parent_account": "Accounts Payable - _TC",
+				"company": "_Test Company",
+				"account_type": "Payable",
+				"root_type": "Liability",
+				"report_type": "Balance Sheet",
+				"account_currency": "USD",
+			}
+		).insert()
+		foreign_invoice = make_purchase_invoice()
+		foreign_invoice.db_set("currency", "USD")
+		foreign_invoice.db_set("conversion_rate", 80)
+		foreign_invoice.db_set("credit_to", usd_creditors.name)
+		foreign_invoice.db_set("outstanding_amount", 100.236)
+		local_invoice = make_purchase_invoice()
+		local_invoice.db_set("currency", "INR")
+		local_invoice.db_set("conversion_rate", 1)
+		local_invoice.db_set("outstanding_amount", 200.456)
+		columns, data, *_ = execute(frappe._dict({"company": foreign_invoice.company}))
+		outstanding_precision = 2
 
+		data_by_name = {x.get("voucher_no"): x.get("outstanding_amount") for x in data}
+		self.assertEqual(data_by_name.get(foreign_invoice.name), flt((100.236 * 80), outstanding_precision))
+		self.assertEqual(data_by_name.get(local_invoice.name), flt(200.456, outstanding_precision))
+
+	def test_purchase_register_ledger_view(self):
 		filters = frappe._dict(
 			company="_Test Company 6",
 			from_date=add_months(today(), -1),

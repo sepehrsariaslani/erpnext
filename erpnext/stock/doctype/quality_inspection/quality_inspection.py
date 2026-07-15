@@ -8,6 +8,10 @@ from frappe.model.document import Document
 from frappe.model.mapper import get_mapped_doc
 from frappe.utils import cint, cstr, flt, get_link_to_form, get_number_format_info
 
+from erpnext.controllers.stock_controller import (
+	QI_INCOMING_PURPOSES,
+	QI_OUTGOING_PURPOSES,
+)
 from erpnext.stock.doctype.quality_inspection_template.quality_inspection_template import (
 	get_template_details,
 )
@@ -365,58 +369,101 @@ class QualityInspection(Document):
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def item_query(doctype, txt, searchfield, start, page_len, filters):
-	from frappe.desk.reportview import get_match_cond
+	reference_doctype = filters.get("reference_doctype")
 
-	from_doctype = cstr(filters.get("from"))
-	parent_doctype = cstr(filters.get("parent_doctype"))
-	if not from_doctype or not frappe.db.exists("DocType", from_doctype):
+	if not reference_doctype:
 		return []
-
-	mcond = get_match_cond(parent_doctype or from_doctype)
-	cond, qi_condition = "", "and (quality_inspection is null or quality_inspection = '')"
-
-	if filters.get("parent"):
-		if (
-			from_doctype in ["Purchase Invoice Item", "Purchase Receipt Item"]
-			and filters.get("inspection_type") != "In Process"
-		):
-			cond = """and item_code in (select name from `tabItem` where
-				inspection_required_before_purchase = 1)"""
-		elif (
-			from_doctype in ["Sales Invoice Item", "Delivery Note Item"]
-			and filters.get("inspection_type") != "In Process"
-		):
-			cond = """and item_code in (select name from `tabItem` where
-				inspection_required_before_delivery = 1)"""
-		elif from_doctype == "Stock Entry Detail":
-			cond = """and s_warehouse is null"""
-
-		if from_doctype in ["Supplier Quotation Item"]:
-			qi_condition = ""
-
-		return frappe.db.sql(
-			f"""
-				SELECT distinct item_code, item_name
-				FROM `tab{from_doctype}`
-				WHERE parent=%(parent)s and docstatus < 2 and item_code like %(txt)s
-				{qi_condition} {cond} {mcond}
-				ORDER BY item_code limit {cint(page_len)} offset {cint(start)}
-			""",
-			{"parent": filters.get("parent"), "txt": "%%%s%%" % txt},
+	elif reference_doctype == "Job Card":
+		production_item, item_name = frappe.get_value(
+			"Job Card", filters.get("reference_name"), ["production_item", "item_name"]
 		)
+		return ((production_item, item_name),)
+	else:
+		my_filters = [
+			["items.parent", "=", filters.get("reference_name")],
+			"and",
+			["items.item_code", "like", f"%{txt}%"],
+			"and",
+			["docstatus", "<", 2],
+			"and",
+			["items.quality_inspection", "is", "not set"],
+		]
 
-	elif filters.get("reference_name"):
-		return frappe.db.sql(
-			f"""
-				SELECT production_item
-				FROM `tab{from_doctype}`
-				WHERE name = %(reference_name)s and docstatus < 2 and production_item like %(txt)s
-				{qi_condition} {cond} {mcond}
-				ORDER BY production_item
-				limit {cint(page_len)} offset {cint(start)}
-			""",
-			{"reference_name": filters.get("reference_name"), "txt": "%%%s%%" % txt},
+		require_distinct_warehouse = False
+
+		if reference_doctype == "Stock Entry":
+			purpose = frappe.get_cached_value("Stock Entry", filters.get("reference_name"), "purpose")
+			my_filters.extend(
+				[
+					"and",
+					["items.type", "is", "not set"],
+					"and",
+					["items.is_legacy_scrap_item", "=", 0],
+				]
+			)
+			if purpose == "Manufacture":
+				my_filters.extend(
+					[
+						"and",
+						["items.is_finished_item", "=", 1],
+					]
+				)
+			elif purpose in QI_INCOMING_PURPOSES:
+				my_filters.extend(
+					[
+						"and",
+						["items.t_warehouse", "is", "set"],
+					]
+				)
+			elif purpose in QI_OUTGOING_PURPOSES:
+				my_filters.extend(
+					[
+						"and",
+						["items.s_warehouse", "is", "set"],
+					]
+				)
+				require_distinct_warehouse = True
+			else:
+				# purpose requires no quality inspection
+				return []
+		elif filters.get("inspection_type") != "In Process":
+			my_filters.extend(
+				[
+					"and",
+					[
+						"items.item_code",
+						"in",
+						frappe.get_list(
+							"Item",
+							filters={
+								"inspection_required_before_purchase"
+								if filters.get("inspection_type") == "Incoming"
+								else "inspection_required_before_delivery": 1
+							},
+							pluck="name",
+						),
+					],
+				]
+			)
+
+		query = frappe.get_query(
+			reference_doctype,
+			fields=["items.item_code, items.item_name"],
+			filters=my_filters,
+			offset=start,
+			limit=page_len,
+			order_by="items.item_code",
+			ignore_permissions=False,
+			distinct=True,
 		)
+		if require_distinct_warehouse:
+			# The cross-column guard (s_warehouse != t_warehouse) can't be expressed in frappe's
+			# filter-list syntax, so it is appended as a raw query-builder condition. This relies on
+			# the "items.s_warehouse" filter above having already LEFT-JOINed the child table, so
+			# child.t_warehouse references that same joined table.
+			child = frappe.qb.DocType(frappe.get_meta(reference_doctype).get_field("items").options)
+			query = query.where(child.t_warehouse.isnull() | (child.s_warehouse != child.t_warehouse))
+		return query.run()
 
 
 @frappe.whitelist()

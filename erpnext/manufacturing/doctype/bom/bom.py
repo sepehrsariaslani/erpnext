@@ -10,7 +10,9 @@ import frappe
 from frappe import _, bold
 from frappe.core.doctype.version.version import get_diff
 from frappe.model.mapper import get_mapped_doc
-from frappe.utils import cint, cstr, flt, today
+from frappe.query_builder import Field
+from frappe.query_builder.functions import IfNull
+from frappe.utils import cint, cstr, flt, get_link_to_form, today
 from frappe.website.website_generator import WebsiteGenerator
 
 import erpnext
@@ -277,6 +279,76 @@ class BOM(WebsiteGenerator):
 		self.set_process_loss_qty()
 		self.validate_scrap_items()
 		self.set_default_uom()
+		self.validate_semi_finished_goods()
+		self.validate_secondary_items()
+		self.set_fg_cost_allocation()
+		self.validate_total_cost_allocation()
+
+		if self.docstatus == 1:
+			self.validate_raw_materials_of_operation()
+
+	def validate_semi_finished_goods(self):
+		if not self.track_semi_finished_goods or not self.operations:
+			return
+
+		fg_items = []
+		for row in self.operations:
+			if not row.is_final_finished_good:
+				continue
+
+			fg_items.append(row.finished_good)
+
+		if not fg_items:
+			frappe.throw(
+				_(
+					"Since you have enabled 'Track Semi Finished Goods', at least one operation must have 'Is Final Finished Good' checked. For that set the FG / Semi FG Item as {0} against an operation."
+				).format(bold(self.item)),
+			)
+
+		if fg_items and len(fg_items) > 1:
+			frappe.throw(
+				_(
+					"Only one operation can have 'Is Final Finished Good' checked when 'Track Semi Finished Goods' is enabled."
+				),
+			)
+
+	def validate_secondary_items(self):
+		for item in self.secondary_items:
+			if not item.is_legacy and item.item_code == self.item:
+				frappe.throw(
+					_(
+						"Row #{0}: Finished Good Item {1} cannot be added in the Secondary Items table."
+					).format(item.idx, get_link_to_form("Item", item.item_code))
+				)
+
+			if item.process_loss_per >= 100:
+				frappe.throw(
+					_("Row #{0}: Process Loss Percentage should be less than 100% for {1} Item {2}").format(
+						item.idx, item.type, get_link_to_form("Item", item.item_code)
+					)
+				)
+
+	def validate_raw_materials_of_operation(self):
+		if not self.track_semi_finished_goods or not self.operations:
+			return
+
+		operation_idx_with_no_rm = {}
+		for row in self.operations:
+			if row.bom_no:
+				continue
+
+			operation_idx_with_no_rm[row.idx] = row
+
+		for row in self.items:
+			if row.operation_row_id and row.operation_row_id in operation_idx_with_no_rm:
+				del operation_idx_with_no_rm[row.operation_row_id]
+
+		for idx, row in operation_idx_with_no_rm.items():
+			frappe.throw(
+				_("For operation {0} at row {1}, please add raw materials or set a BOM against it.").format(
+					bold(row.operation), idx
+				),
+			)
 
 	def set_default_uom(self):
 		if not self.get("items"):
@@ -1325,35 +1397,40 @@ def get_children(parent=None, is_root=False, **filters):
 		return bom_items
 
 
-def add_additional_cost(stock_entry, work_order):
+def add_additional_cost(stock_entry, work_order, job_card=None):
 	# Add non stock items cost in the additional cost
 	stock_entry.additional_costs = []
-	company_account = frappe.db.get_value(
+	expense_account = frappe.get_value(
 		"Company",
 		work_order.company,
-		["expenses_included_in_valuation", "default_operating_cost_account"],
-		as_dict=1,
+		"default_operating_cost_account",
 	)
-
-	expense_account = (
-		company_account.default_operating_cost_account or company_account.expenses_included_in_valuation
-	)
-	add_non_stock_items_cost(stock_entry, work_order, expense_account)
-	add_operations_cost(stock_entry, work_order, expense_account)
+	add_non_stock_items_cost(stock_entry, work_order, expense_account, job_card=job_card)
+	add_operations_cost(stock_entry, work_order, expense_account, job_card=job_card)
 
 
-def add_non_stock_items_cost(stock_entry, work_order, expense_account):
+def add_non_stock_items_cost(stock_entry, work_order, expense_account, job_card=None):
 	bom = frappe.get_doc("BOM", work_order.bom_no)
-	table = "exploded_items" if work_order.get("use_multi_level_bom") else "items"
+	table = "items"
+	if work_order and not job_card:
+		table = "exploded_items" if work_order.get("use_multi_level_bom") else "items"
 
-	items = {}
+	items = frappe._dict()
 	for d in bom.get(table):
-		items.setdefault(d.item_code, d.amount)
+		# Phantom item is exploded, so its cost is considered via its components
+		if d.get("is_phantom_item"):
+			continue
+
+		items.setdefault(d.item_code, 0)
+		items[d.item_code] += flt(d.amount)
 
 	non_stock_items = frappe.get_all(
 		"Item",
 		fields="name",
-		filters={"name": ("in", list(items.keys())), "ifnull(is_stock_item, 0)": 0},
+		filters=[
+			["name", "in", list(items.keys())],
+			[IfNull(Field("is_stock_item"), 0), "=", 0],
+		],
 		as_list=1,
 	)
 
@@ -1374,21 +1451,113 @@ def add_non_stock_items_cost(stock_entry, work_order, expense_account):
 		)
 
 
-def add_operations_cost(stock_entry, work_order=None, expense_account=None):
-	from erpnext.stock.doctype.stock_entry.stock_entry import get_operating_cost_per_unit
+def add_operating_cost_component_wise(stock_entry, work_order=None, op_expense_account=None, job_card=None):
+	if not work_order:
+		return False
 
-	operating_cost_per_unit = get_operating_cost_per_unit(work_order, stock_entry.bom_no)
+	from erpnext.stock.doctype.stock_entry.stock_entry import get_consumed_operating_cost
 
-	if operating_cost_per_unit:
-		stock_entry.append(
-			"additional_costs",
-			{
-				"expense_account": expense_account,
-				"description": _("Operating Cost as per Work Order / BOM"),
-				"amount": operating_cost_per_unit * flt(stock_entry.fg_completed_qty),
+	cost_added = False
+	for row in work_order.operations:
+		if job_card and job_card.operation_id != row.name:
+			continue
+
+		if not row.actual_operation_time:
+			continue
+
+		workstation_cost = frappe.get_all(
+			"Workstation Cost",
+			fields=["operating_component", "operating_cost"],
+			filters={
+				"parent": row.workstation,
+				"parenttype": "Workstation",
 			},
 		)
 
+		consumed_operating_cost = (
+			get_consumed_operating_cost(work_order.name, stock_entry.bom_no, row.name) or []
+		)
+		for wc in workstation_cost:
+			expense_account = (
+				get_component_account(wc.operating_component, stock_entry.company) or op_expense_account
+			)
+			consumed_op_cost = next(
+				(
+					cost
+					for cost in consumed_operating_cost
+					if cost.get("operating_component") == wc.operating_component
+				),
+				{},
+			)
+			actual_cp_operating_cost = flt(
+				flt(wc.operating_cost) * flt(flt(row.actual_operation_time) / 60.0)
+				- flt(consumed_op_cost.get("consumed_cost")),
+				row.precision("actual_operating_cost"),
+			)
+
+			remaining_qty = row.completed_qty - consumed_op_cost.get("consumed_qty", 0)
+			per_unit_cost = actual_cp_operating_cost / (remaining_qty or 1)
+			operating_cost = per_unit_cost * stock_entry.fg_completed_qty
+
+			if actual_cp_operating_cost:
+				stock_entry.append(
+					"additional_costs",
+					{
+						"expense_account": expense_account,
+						"description": _("{0} Operating Cost for operation {1}").format(
+							wc.operating_component, row.operation
+						),
+						"amount": flt(
+							min(operating_cost, actual_cp_operating_cost),
+							frappe.get_precision("Landed Cost Taxes and Charges", "amount"),
+						),
+						"has_operating_cost": 1,
+						"operation_id": row.name,
+						"operating_component": wc.operating_component,
+						"qty": min(remaining_qty, stock_entry.fg_completed_qty),
+					},
+				)
+
+				cost_added = True
+
+	return cost_added
+
+
+@frappe.request_cache
+def get_component_account(parent, company):
+	return frappe.db.get_value(
+		"Workstation Operating Component Account", {"parent": parent, "company": company}, "expense_account"
+	)
+
+
+def add_operations_cost(stock_entry, work_order=None, expense_account=None, job_card=None):
+	from erpnext.stock.doctype.stock_entry.stock_entry import (
+		get_remaining_operating_cost,
+	)
+
+	remaining_operating_cost = get_remaining_operating_cost(work_order, stock_entry.bom_no)
+
+	if remaining_operating_cost:
+		cost_added = add_operating_cost_component_wise(
+			stock_entry,
+			work_order,
+			expense_account,
+			job_card=job_card,
+		)
+
+		if not cost_added and not job_card:
+			stock_entry.append(
+				"additional_costs",
+				{
+					"expense_account": expense_account,
+					"description": _("Operating Cost as per Work Order / BOM"),
+					"amount": flt(
+						remaining_operating_cost * stock_entry.fg_completed_qty,
+						frappe.get_precision("Landed Cost Taxes and Charges", "amount"),
+					),
+					"has_operating_cost": 1,
+				},
+			)
 	if work_order and work_order.additional_operating_cost and work_order.qty:
 		additional_operating_cost_per_unit = flt(work_order.additional_operating_cost) / flt(work_order.qty)
 

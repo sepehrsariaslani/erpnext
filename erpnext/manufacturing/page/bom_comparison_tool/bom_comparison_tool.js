@@ -172,9 +172,9 @@ erpnext.BOMComparisonTool = class BOMComparisonTool {
 
 					return `
 						<tr>
-							<td>${label}</td>
-							<td class="bom-col-1">${value1}</td>
-							<td class="bom-col-2">${value2}</td>
+							<td>${frappe.utils.escape_html(cstr(label))}</td>
+							<td class="bom-col-1">${frappe.utils.escape_html(cstr(value1))}</td>
+							<td class="bom-col-2">${frappe.utils.escape_html(cstr(value2))}</td>
 						</tr>
 					`;
 				})
@@ -219,8 +219,8 @@ erpnext.BOMComparisonTool = class BOMComparisonTool {
 						<span class="text-muted" style="font-size: 0.9em;">
 							${label_map["Qty"]}:
 							<i class="fa fa-pencil text-muted edit-qty-btn pointer" 
-								data-bom="${bom_name}" 
-								data-item="${item.item_code}" 
+								data-bom="${frappe.utils.escape_html(cstr(bom_name))}" 
+								data-item="${frappe.utils.escape_html(cstr(item.item_code))}" 
 								data-qty="${qty}"
 								style="margin-right: 5px; cursor: pointer;"></i>
 						</span>
@@ -239,9 +239,9 @@ erpnext.BOMComparisonTool = class BOMComparisonTool {
 				rows += `
 					<tr>
 						<td style="text-align: right; width: 40%;">
-							<div style="font-weight: bold; font-size: 1.1em;">${item.item_code}</div>
-							<div class="text-muted">${item.item_name || ""}</div>
-							<div class="text-muted" style="font-size: 0.85em;">${item.description || ""}</div>
+							<div style="font-weight: bold; font-size: 1.1em;">${frappe.utils.escape_html(cstr(item.item_code))}</div>
+							<div class="text-muted">${frappe.utils.escape_html(cstr(item.item_name || ""))}</div>
+							<div class="text-muted" style="font-size: 0.85em;">${frappe.utils.escape_html(cstr(item.description || ""))}</div>
 						</td>
 						<td class="bom-col-1" style="width: 30%; vertical-align: top;">
 							${make_detail(item.qty_1, 0, item.amount_1, this.name1)}
@@ -267,8 +267,8 @@ erpnext.BOMComparisonTool = class BOMComparisonTool {
 						<span class="text-muted" style="font-size: 0.9em;">
 							${label_map["Time (mins)"]}:
 							<i class="fa fa-pencil text-muted edit-op-btn pointer" 
-								data-bom="${bom_name}" 
-								data-operation="${op.operation}" 
+								data-bom="${frappe.utils.escape_html(cstr(bom_name))}" 
+								data-operation="${frappe.utils.escape_html(cstr(op.operation))}" 
 								data-time="${time}"
 								style="margin-right: 5px; cursor: pointer;"></i>
 						</span>
@@ -283,8 +283,8 @@ erpnext.BOMComparisonTool = class BOMComparisonTool {
 				rows += `
 					<tr>
 						<td style="text-align: right; width: 40%;">
-							<div style="font-weight: bold;">${op.operation}</div>
-							<div class="text-muted">${op.workstation || ""}</div>
+							<div style="font-weight: bold;">${frappe.utils.escape_html(cstr(op.operation))}</div>
+							<div class="text-muted">${frappe.utils.escape_html(cstr(op.workstation || ""))}</div>
 						</td>
 						<td class="bom-col-1" style="width: 30%; vertical-align: top;">
 							${make_op_detail(op.time_1, op.cost_1, this.name1)}

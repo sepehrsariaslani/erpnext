@@ -18,6 +18,7 @@ from frappe.utils import (
 	cint,
 	comma_and,
 	flt,
+	get_filtered_list_link,
 	get_link_to_form,
 	getdate,
 	now_datetime,
@@ -382,9 +383,9 @@ class ProductionPlan(Document):
 		items = items_query.run(as_dict=True)
 
 		for item in items:
-			item.pending_qty = (
-				flt(item.qty) - max(item.work_order_qty, item.delivered_qty, 0)
-			) * item.conversion_factor
+			item.pending_qty = flt(item.qty) - max(
+				item.work_order_qty, flt(item.delivered_qty) * item.conversion_factor, 0
+			)
 
 		pi = frappe.qb.DocType("Packed Item")
 
@@ -986,7 +987,6 @@ class ProductionPlan(Document):
 		for field in [
 			"production_item",
 			"item_name",
-			"qty",
 			"fg_warehouse",
 			"description",
 			"bom_no",
@@ -1068,9 +1068,7 @@ class ProductionPlan(Document):
 			return
 
 		frappe.flags.mute_messages = False
-		if doc_list:
-			doc_list = [get_link_to_form(doctype, p) for p in doc_list]
-			msgprint(_("{0} created").format(comma_and(doc_list)))
+		msgprint(_("{0} created").format(get_filtered_list_link(doctype, doc_list)))
 
 	def create_work_order(self, item):
 		from erpnext.manufacturing.doctype.work_order.work_order import OverProductionError
@@ -1244,8 +1242,8 @@ class ProductionPlan(Document):
 				).format(self.sub_assembly_warehouse)
 				+ "<br><br>"
 			)
-			message += _(
-				"If you still want to proceed, please disable 'Skip Available Sub Assembly Items' checkbox."
+			message += _("If you still want to proceed, please disable '{0}' checkbox.").format(
+				self.meta.get_field("skip_available_sub_assembly_item").label
 			)
 
 			frappe.msgprint(message, title=_("Note"))
@@ -1465,6 +1463,7 @@ def get_exploded_items(item_details, company, bom_no, include_non_stock_items, p
 			item_uom.conversion_factor,
 			item.safety_stock,
 			bom.item.as_("main_bom_item"),
+			bom.name.as_("main_bom"),
 		)
 		.where(
 			(bei.docstatus < 2)
@@ -1534,6 +1533,7 @@ def get_subitems(
 			item.purchase_uom,
 			item_uom.conversion_factor,
 			bom.item.as_("main_bom_item"),
+			bom.name.as_("main_bom"),
 			bom_item.is_phantom_item,
 		)
 		.where(
@@ -1978,7 +1978,9 @@ def get_items_for_material_requests(doc, warehouses=None, get_parent_warehouse_d
 		mr_items = new_mr_items
 
 	if not mr_items:
-		to_enable = frappe.bold(_("Ignore Existing Projected Quantity"))
+		to_enable = frappe.bold(
+			frappe.get_meta("Production Plan").get_field("ignore_existing_ordered_qty").label
+		)
 		warehouse = frappe.bold(doc.get("for_warehouse"))
 		message = (
 			_(
@@ -2188,9 +2190,7 @@ def get_items_for_material_requests(doc, warehouses=None, get_parent_warehouse_d
 def get_materials_from_other_locations(item, warehouses, new_mr_items, company):
 	from erpnext.stock.doctype.pick_list.pick_list import get_available_item_locations
 
-	stock_uom, purchase_uom = frappe.db.get_value(
-		"Item", item.get("item_code"), ["stock_uom", "purchase_uom"]
-	)
+	purchase_uom = frappe.db.get_value("Item", item.get("item_code"), "purchase_uom")
 
 	locations = get_available_item_locations(
 		item.get("item_code"),

@@ -58,6 +58,7 @@ class AccountsSettings(Document):
 		auto_reconciliation_job_trigger: DF.Int
 		automatically_fetch_payment_terms: DF.Check
 		automatically_process_deferred_accounting_entry: DF.Check
+		automatically_run_rules_on_unreconciled_transactions: DF.Check
 		book_asset_depreciation_entry_automatically: DF.Check
 		book_deferred_entries_based_on: DF.Literal["Days", "Months"]
 		book_deferred_entries_via_journal_entry: DF.Check
@@ -77,6 +78,7 @@ class AccountsSettings(Document):
 		enable_immutable_ledger: DF.Check
 		enable_loyalty_point_program: DF.Check
 		enable_party_matching: DF.Check
+		enable_subscription: DF.Check
 		exchange_gain_loss_posting_date: DF.Literal["Invoice", "Payment", "Reconciliation Date"]
 		fetch_payment_schedule_in_payment_request: DF.Check
 		fetch_valuation_rate_for_internal_transaction: DF.Check
@@ -88,7 +90,8 @@ class AccountsSettings(Document):
 		make_payment_via_journal_entry: DF.Check
 		merge_similar_account_heads: DF.Check
 		over_billing_allowance: DF.Currency
-		receivable_payable_fetch_method: DF.Literal["Buffered Cursor", "UnBuffered Cursor", "Raw SQL"]
+		pcv_job_timeout: DF.Int
+		receivable_payable_fetch_method: DF.Literal["Buffered Cursor", "UnBuffered Cursor"]
 		receivable_payable_remarks_length: DF.Int
 		reconciliation_queue_size: DF.Int
 		repost_allowed_types: DF.Table[RepostAllowedTypes]
@@ -102,6 +105,7 @@ class AccountsSettings(Document):
 		show_taxes_as_table_in_print: DF.Check
 		stale_days: DF.Int
 		submit_journal_entries: DF.Check
+		transfer_match_days: DF.Int
 		unlink_advance_payment_on_cancelation_of_order: DF.Check
 		unlink_payment_on_cancellation_of_invoice: DF.Check
 		use_legacy_budget_controller: DF.Check
@@ -140,6 +144,10 @@ class AccountsSettings(Document):
 
 		if old_doc.enable_loyalty_point_program != self.enable_loyalty_point_program:
 			toggle_loyalty_point_program_section(not self.enable_loyalty_point_program)
+			clear_cache = True
+
+		if old_doc.enable_subscription != self.enable_subscription:
+			toggle_subscription_sections(not self.enable_subscription)
 			clear_cache = True
 
 		if clear_cache:
@@ -204,13 +212,6 @@ class AccountsSettings(Document):
 
 		set_allow_on_submit_for_dimension_fields(doctypes)
 
-	@frappe.whitelist()
-	def drop_ar_sql_procedures(self):
-		from erpnext.accounts.report.accounts_receivable.accounts_receivable import InitSQLProceduresForAR
-
-		frappe.db.sql(f"drop procedure if exists {InitSQLProceduresForAR.init_procedure_name}")
-		frappe.db.sql(f"drop procedure if exists {InitSQLProceduresForAR.allocate_procedure_name}")
-
 
 def toggle_accounting_dimension_sections(hide):
 	accounting_dimension_doctypes = frappe.get_hooks("accounting_dimension_doctypes")
@@ -232,6 +233,12 @@ def toggle_loyalty_point_program_section(hide):
 		meta = frappe.get_meta(doctype)
 		if meta.has_field("loyalty_points_redemption"):
 			create_property_setter_for_hiding_field(doctype, "loyalty_points_redemption", hide)
+
+
+def toggle_subscription_sections(hide):
+	subscription_doctypes = frappe.get_hooks("subscription_doctypes")
+	for doctype in subscription_doctypes:
+		create_property_setter_for_hiding_field(doctype, "subscription_section", hide)
 
 
 def create_property_setter_for_hiding_field(doctype, field_name, hide):

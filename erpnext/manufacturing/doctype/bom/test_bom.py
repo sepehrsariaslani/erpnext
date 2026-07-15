@@ -165,9 +165,6 @@ class TestBOM(ERPNextTestSuite):
 	def test_bom_cost_multi_uom_multi_currency_based_on_price_list(self):
 		frappe.db.set_value("Price List", "_Test Price List", "price_not_uom_dependent", 1)
 		for item_code, rate in (("_Test Item", 3600), ("_Test Item Home Desktop Manufactured", 3000)):
-			frappe.db.sql(
-				"delete from `tabItem Price` where price_list='_Test Price List' and item_code=%s", item_code
-			)
 			item_price = frappe.new_doc("Item Price")
 			item_price.price_list = "_Test Price List"
 			item_price.item_code = item_code
@@ -446,6 +443,30 @@ class TestBOM(ERPNextTestSuite):
 		bom_doc = create_bom_with_process_loss_item(fg_item_whole, bom_item, process_loss_percentage=20)
 		#  Items with whole UOMs can't be PL Items
 		self.assertRaises(frappe.ValidationError, bom_doc.submit)
+
+	@timeout
+	def test_fg_item_not_allowed_in_secondary_items(self):
+		fg_item = make_item(properties={"is_stock_item": 1, "valuation_rate": 100}).name
+		rm_item = make_item(properties={"is_stock_item": 1, "valuation_rate": 100}).name
+
+		bom_doc = frappe.new_doc("BOM")
+		bom_doc.item = fg_item
+		bom_doc.quantity = 1
+		bom_doc.company = "_Test Company"
+		bom_doc.currency = "INR"
+		bom_doc.append("items", {"item_code": rm_item, "qty": 1, "rate": 100.0})
+		bom_doc.append(
+			"secondary_items",
+			{
+				"item_code": fg_item,
+				"secondary_item_type": "Additional Finished Good",
+				"qty": 1,
+				"cost_allocation_per": 10,
+			},
+		)
+
+		# FG item of the BOM cannot also be a secondary item
+		self.assertRaises(frappe.ValidationError, bom_doc.save)
 
 	@timeout
 	def test_bom_item_query(self):

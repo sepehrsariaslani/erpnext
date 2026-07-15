@@ -47,6 +47,7 @@ class RepostItemValuation(Document):
 		items_to_be_repost: DF.Code | None
 		posting_date: DF.Date
 		posting_time: DF.Time | None
+		recalculate_valuation_rate: DF.Check
 		recreate_stock_ledgers: DF.Check
 		repost_only_accounting_ledgers: DF.Check
 		reposting_data_file: DF.Attach | None
@@ -92,7 +93,7 @@ class RepostItemValuation(Document):
 		self.validate_recreate_stock_ledgers()
 
 	def set_default_posting_time(self):
-		if not self.posting_time:
+		if self.posting_time is None:
 			self.posting_time = nowtime()
 
 		if not self.posting_date:
@@ -343,6 +344,15 @@ class RepostItemValuation(Document):
 			filters,
 		)
 
+	def _recalculate_valuation_rate(self):
+		doc = frappe.get_doc(self.voucher_type, self.voucher_no)
+		if doc.get("is_internal_supplier"):
+			doc.set_sales_incoming_rate_for_internal_transfer()
+
+		doc.update_valuation_rate()
+		for item in doc.items:
+			item.db_set("valuation_rate", item.valuation_rate)
+
 	def recreate_stock_ledger_entries(self):
 		"""Recreate Stock Ledger Entries for the transaction."""
 		if self.based_on == "Transaction" and self.recreate_stock_ledgers:
@@ -384,6 +394,12 @@ def repost(doc):
 		if not frappe.in_test:
 			frappe.db.commit()
 
+		if (
+			doc.voucher_type in ["Purchase Receipt", "Purchase Invoice", "Stock Entry"]
+			and doc.recalculate_valuation_rate
+		):
+			doc._recalculate_valuation_rate()
+
 		if doc.recreate_stock_ledgers:
 			doc.recreate_stock_ledger_entries()
 
@@ -411,8 +427,15 @@ def repost(doc):
 			message = message.get("message")
 
 		status = "Failed"
-		# If failed because of timeout, set status to In Progress
-		if traceback and ("timeout" in traceback.lower() or "Deadlock found" in traceback):
+		# If failed because of a recoverable error (timeout, deadlock), set status to In Progress
+		# so the scheduler automatically retries instead of leaving it permanently failed.
+		# NOTE: isinstance check comes first because the traceback string matching is unreliable
+		# when SIGALRM kills the process mid-C-extension (JobTimeoutException may not appear
+		# in the traceback if the exception handler itself was interrupted).
+		traceback_lower = traceback.lower() if traceback else ""
+		if isinstance(e, RecoverableErrors) or (
+			traceback_lower and ("timeout" in traceback_lower or "deadlock found" in traceback_lower)
+		):
 			status = "In Progress"
 
 		if traceback:
