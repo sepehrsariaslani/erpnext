@@ -1,0 +1,72 @@
+<!-- employee_productivity.html -->
+<div class="employee-productivity-page">
+    <div class="container-fluid">
+        <div class="page-header">
+            <h1>{{ _("Employee Productivity Dashboard") }}</h1>
+            <p class="text-muted">{{ _("Track employee performance, work paths, and productivity metrics") }}</p>
+        </div>
+        
+        <div class="dashboard-content">
+            <!-- محتوا توسط JavaScript رندر می‌شود -->
+        </div>
+    </div>
+</div>
+
+<style>
+    .employee-productivity-page {
+        padding: 20px;
+    }
+    
+    .page-header {
+        margin-bottom: 30px;
+        border-bottom: 1px solid #e9ecef;
+        padding-bottom: 20px;
+    }
+    
+    .card {
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border: none;
+        margin-bottom: 20px;
+    }
+    
+    .card-header {
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+        font-weight: 600;
+    }
+    
+    .productivity-summary-cards .card {
+        transition: transform 0.2s;
+    }
+    
+    .productivity-summary-cards .card:hover {
+        transform: translateY(-2px);
+    }
+    
+    .badge {
+        font-size: 0.8em;
+        margin-right: 5px;
+    }
+    
+    .table th {
+        border-top: none;
+        font-weight: 600;
+        background-color: #f8f9fa;
+    }
+    
+    .employee-path {
+        padding: 15px;
+        background-color: #fff;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        border: 1px solid #e9ecef;
+    }
+    
+    .employee-path h6 {
+        color: #495057;
+        font-weight: 600;
+        border-bottom: 2px solid #007bff;
+        padding-bottom: 5px;
+        display: inline-block;
+    }
+</style>

@@ -26,6 +26,7 @@
   "column_break_12",
   "branch_code",
   "bank_account_no",
+  "card_number",
   "address_and_contact",
   "address_html",
   "column_break_13",
@@ -147,6 +148,12 @@
    "in_list_view": 1,
    "label": "Bank Account No",
    "length": 30
+  },
+  {
+   "fieldname": "card_number",
+   "fieldtype": "Data",
+   "label": "Card Number",
+   "length": 19
   },
   {
    "fieldname": "address_and_contact",

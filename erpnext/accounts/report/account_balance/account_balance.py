@@ -6,6 +6,7 @@ import frappe
 from frappe import _
 
 from erpnext.accounts.utils import get_balance_on
+from erpnext.regional.iran.memorandum_accounts import has_memorandum_field
 
 
 def execute(filters=None):
@@ -55,6 +56,9 @@ def get_conditions(filters):
 
 	if filters.root_type:
 		conditions["root_type"] = filters.root_type
+
+	if has_memorandum_field() and not filters.get("include_memorandum_accounts"):
+		conditions["is_memorandum"] = 0
 
 	return conditions
 

@@ -771,6 +771,7 @@ class ProductionPlan(Document):
 
 		return item_dict
 
+	'''
 	@frappe.whitelist()
 	def make_work_order(self):
 		from erpnext.manufacturing.doctype.work_order.work_order import get_default_warehouse
@@ -831,7 +832,156 @@ class ProductionPlan(Document):
 			work_order = self.create_work_order(work_order_data)
 			if work_order:
 				wo_list.append(work_order)
+	'''
 
+	def calculate_subassembly_usage_in_production_plan(production_plan_name, finished_goods_item, bom_no):
+		"""
+		محاسبه میکنه که چقدر از sub-assembly های موجود میتونیم استفاده کنیم
+		"""
+		import frappe
+		from frappe.utils import flt
+		from erpnext.stock.utils import get_latest_stock_qty
+		
+		if not production_plan_name:
+			return {}
+		
+		try:
+			production_plan = frappe.get_doc("Production Plan", production_plan_name)
+			subassembly_usage = {}
+			
+			# BOM محصول نهایی رو بگیر
+			bom_doc = frappe.get_doc("BOM", bom_no)
+			
+			for bom_item in bom_doc.items:
+				# بررسی که این آیتم در sub_assembly_items هست یا نه
+				for sa_row in production_plan.sub_assembly_items:
+					if sa_row.production_item == bom_item.item_code:
+						# موجودی این sub-assembly
+						warehouse = sa_row.fg_warehouse
+						current_stock = get_latest_stock_qty(bom_item.item_code, warehouse) or 0
+						
+						if current_stock > 0:
+							subassembly_usage[bom_item.item_code] = {
+								'available_qty': current_stock,
+								'required_per_unit': flt(bom_item.qty),
+								'warehouse': warehouse
+							}
+						break
+			
+			return subassembly_usage
+		
+		except Exception as e:
+			frappe.log_error(f"خطا در محاسبه sub-assembly usage: {str(e)}")
+			return {}
+
+
+	@frappe.whitelist()
+	def make_work_order(self):
+		from erpnext.manufacturing.doctype.work_order.work_order import get_default_warehouse
+
+		wo_list, po_list = [], []
+		subcontracted_po = {}
+		default_warehouses = get_default_warehouse()
+
+		# فقط برای محصولات نهایی Work Order بساز
+		self.make_work_order_for_finished_goods(wo_list, default_warehouses)
+		
+		# فقط برای subcontracted items PO بساز
+		self.handle_subcontracted_items_only(subcontracted_po, po_list)
+		
+		self.show_list_created_message("Work Order", wo_list)
+		self.show_list_created_message("Purchase Order", po_list)
+
+		if not wo_list:
+			frappe.msgprint(_("No Work Orders were created"))
+
+	def make_work_order_for_finished_goods(self, wo_list, default_warehouses):
+		items_data = self.get_production_items()
+
+		for _key, item in items_data.items():
+			# همیشه از multi-level BOM استفاده کن
+			item["use_multi_level_bom"] = 1
+			
+			# محاسبه مقدار نهایی با در نظر گرفتن موجودی sub-assembly ها
+			adjusted_qty = self.calculate_adjusted_qty_for_finished_goods(item)
+			
+			if adjusted_qty <= 0:
+				continue
+				
+			item["qty"] = adjusted_qty
+			set_default_warehouses(item, default_warehouses)
+			work_order = self.create_work_order(item)
+			if work_order:
+				wo_list.append(work_order)
+
+	def calculate_adjusted_qty_for_finished_goods(self, item):
+		"""
+		تعداد نهایی محصول رو با در نظر گرفتن موجودی sub-assembly ها محاسبه می‌کنه
+		"""
+		from frappe.utils import flt
+		from erpnext.stock.utils import get_latest_stock_qty
+		import frappe
+		
+		requested_qty = flt(item.get("qty", 0))
+		production_item = item.get("production_item")
+		
+		if not production_item or requested_qty <= 0:
+			return requested_qty
+		
+		# بررسی موجودی خود محصول نهایی
+		fg_warehouse = item.get("fg_warehouse")
+		current_fg_stock = get_latest_stock_qty(production_item, fg_warehouse) or 0
+		
+		# اگر خود محصول نهایی موجودی کافی داره
+		if current_fg_stock >= requested_qty:
+			frappe.msgprint(f"محصول {production_item} به مقدار کافی در انبار موجود است")
+			return 0
+		
+		# مقدار باقی مانده که باید تولید بشه
+		remaining_qty = requested_qty - current_fg_stock
+		
+		return remaining_qty
+
+	def handle_subcontracted_items_only(self, subcontracted_po, po_list):
+		"""فقط برای subcontracted items Purchase Order بساز"""
+		for row in self.sub_assembly_items:
+			if row.type_of_manufacturing == "Subcontract":
+				remaining_qty = flt(row.qty) - flt(row.ordered_qty)
+				if remaining_qty > 0:
+					subcontracted_po.setdefault(row.supplier, []).append(row)
+		
+		if subcontracted_po:
+			self.make_subcontracted_purchase_order(subcontracted_po, po_list)
+
+	def make_work_order_for_subassembly_items(self, wo_list, subcontracted_po, default_warehouses):
+		"""غیرفعال - دیگه برای sub-assembly Work Order نمیسازیم"""
+		# فقط subcontracted items رو handle میکنیم
+		self.handle_subcontracted_items_only(subcontracted_po, []) 
+
+	def prepare_data_for_sub_assembly_items(self, row, wo_data):
+		"""نگه داریم برای سازگاری"""
+		for field in [
+			"production_item",
+			"item_name",
+			"qty", 
+			"fg_warehouse",
+			"description",
+			"bom_no",
+			"stock_uom",
+			"bom_level",
+			"schedule_date",
+		]:
+			if row.get(field):
+				wo_data[field] = row.get(field)
+
+		wo_data["qty"] = flt(row.get("qty")) - flt(row.get("ordered_qty"))
+
+		wo_data.update({
+			"use_multi_level_bom": 0,
+			"production_plan": self.name, 
+			"production_plan_sub_assembly_item": row.name,
+		})
+	
 	def prepare_data_for_sub_assembly_items(self, row, wo_data):
 		for field in [
 			"production_item",
@@ -1642,7 +1792,7 @@ def get_warehouse_list(warehouses):
 
 	return warehouse_list
 
-
+'''
 @frappe.whitelist()
 def get_items_for_material_requests(doc, warehouses=None, get_parent_warehouse_data=None):
 	if isinstance(doc, str):
@@ -1841,6 +1991,198 @@ def get_items_for_material_requests(doc, warehouses=None, get_parent_warehouse_d
 		frappe.msgprint(message, title=_("Note"))
 
 	return mr_items
+'''
+@frappe.whitelist()
+def get_items_for_material_requests(doc, warehouses=None, get_parent_warehouse_data=None):
+    """
+    اصلاح‌شده: محاسبه آیتم‌های Material Request با در نظر گرفتن موجودی Sub-Assembly ها
+    """
+    import json
+    from collections import defaultdict
+    from erpnext.manufacturing.doctype.production_plan.production_plan import get_warehouse_list
+
+    if isinstance(doc, str):
+        doc = frappe._dict(json.loads(doc))
+
+    if warehouses:
+        warehouses = list(set(get_warehouse_list(warehouses)))
+
+        if (
+            doc.get("for_warehouse")
+            and not get_parent_warehouse_data
+            and doc.get("for_warehouse") in warehouses
+        ):
+            warehouses.remove(doc.get("for_warehouse"))
+
+    doc["mr_items"] = []
+    po_items = doc.get("po_items") if doc.get("po_items") else doc.get("items")
+
+    # اگر Sub-Assembly وجود داشته باشه، اونایی که نوعشون Material Request هست اضافه میشن
+    if doc.get("sub_assembly_items"):
+        for sa_row in doc.sub_assembly_items:
+            sa_row = frappe._dict(sa_row)
+            if sa_row.type_of_manufacturing == "Material Request":
+                po_items.append(
+                    frappe._dict(
+                        {
+                            "item_code": sa_row.production_item,
+                            "required_qty": sa_row.qty,
+                            "include_exploded_items": 0,
+                        }
+                    )
+                )
+
+    # اگر جدول خالی بود
+    if not po_items or not [row.get("item_code") for row in po_items if row.get("item_code")]:
+        frappe.throw(
+            _("Items to Manufacture are required to pull the Raw Materials associated with it."),
+            title=_("Items Required"),
+        )
+
+    company = doc.get("company")
+    ignore_existing_ordered_qty = doc.get("ignore_existing_ordered_qty")
+    include_safety_stock = doc.get("include_safety_stock")
+
+    so_item_details = frappe._dict()
+    sub_assembly_items = defaultdict(int)
+
+    # -------------------------
+    # منطق استفاده از موجودی Sub-Assembly
+    # -------------------------
+    if doc.get("skip_available_sub_assembly_item") and doc.get("sub_assembly_items"):
+        for d in doc.get("sub_assembly_items"):
+            sub_assembly_items[(d.get("production_item"), d.get("bom_no"))] += d.get("qty")
+
+    for data in po_items:
+        if not data.get("include_exploded_items") and doc.get("sub_assembly_items"):
+            data["include_exploded_items"] = 1
+
+        planned_qty = data.get("required_qty") or data.get("planned_qty")
+        ignore_existing_ordered_qty = data.get("ignore_existing_ordered_qty") or ignore_existing_ordered_qty
+        warehouse = doc.get("for_warehouse")
+
+        item_details = {}
+        if data.get("bom") or data.get("bom_no"):
+            bom_no = data.get("bom") or data.get("bom_no")
+            include_non_stock_items = 1
+            include_subcontracted_items = 1 if data.get("include_exploded_items") else 0
+
+            if not planned_qty:
+                frappe.throw(_("For row {0}: Enter Planned Qty").format(data.get("idx")))
+
+            # 📌 اصلاح‌شده: بررسی موجودی Sub-Assembly قبل از محاسبه BOM
+            if data.get("include_exploded_items") and doc.get("skip_available_sub_assembly_item"):
+                item_details = {}
+                if doc.get("sub_assembly_items"):
+                    item_details = get_raw_materials_of_sub_assembly_items(
+                        so_item_details[doc.get("sales_order")].keys() if so_item_details else [],
+                        item_details,
+                        company,
+                        bom_no,
+                        include_non_stock_items,
+                        sub_assembly_items,
+                        planned_qty=planned_qty,
+                    )
+            elif data.get("include_exploded_items") and include_subcontracted_items:
+                item_details = get_exploded_items(
+                    item_details,
+                    company,
+                    bom_no,
+                    include_non_stock_items,
+                    planned_qty=planned_qty,
+                    doc=doc,
+                )
+            else:
+                item_details = get_subitems(
+                    doc,
+                    data,
+                    item_details,
+                    bom_no,
+                    company,
+                    include_non_stock_items,
+                    include_subcontracted_items,
+                    1,
+                    planned_qty=planned_qty,
+                )
+
+        elif data.get("item_code"):
+            # 📌 آیتم عادی (غیر BOM)
+            item_master = frappe.get_doc("Item", data["item_code"]).as_dict()
+            purchase_uom = item_master.purchase_uom or item_master.stock_uom
+            conversion_factor = (
+                get_uom_conversion_factor(item_master.name, purchase_uom) if item_master.purchase_uom else 1.0
+            )
+
+            item_details[item_master.name] = frappe._dict(
+                {
+                    "item_name": item_master.item_name,
+                    "default_bom": doc.bom,
+                    "purchase_uom": purchase_uom,
+                    "default_warehouse": item_master.default_warehouse,
+                    "min_order_qty": item_master.min_order_qty,
+                    "default_material_request_type": item_master.default_material_request_type,
+                    "qty": planned_qty or 1,
+                    "is_sub_contracted": item_master.is_subcontracted_item,
+                    "item_code": item_master.name,
+                    "description": item_master.description,
+                    "stock_uom": item_master.stock_uom,
+                    "conversion_factor": conversion_factor,
+                    "safety_stock": item_master.safety_stock,
+                }
+            )
+
+        # ذخیره در so_item_details
+        sales_order = doc.get("sales_order")
+        for item_code, details in item_details.items():
+            so_item_details.setdefault(sales_order, frappe._dict())
+            if item_code in so_item_details.get(sales_order, {}):
+                so_item_details[sales_order][item_code]["qty"] += flt(details.qty)
+            else:
+                so_item_details[sales_order][item_code] = details
+
+    # -------------------------
+    # مرحله ساختن mr_items نهایی
+    # -------------------------
+    mr_items = []
+    for sales_order in so_item_details:
+        item_dict = so_item_details[sales_order]
+        for details in item_dict.values():
+            bin_dict = get_bin_details(details, doc.company, warehouse)
+            bin_dict = bin_dict[0] if bin_dict else {}
+
+            if details.qty > 0:
+                items = get_material_request_items(
+                    doc,
+                    details,
+                    sales_order,
+                    company,
+                    ignore_existing_ordered_qty,
+                    include_safety_stock,
+                    warehouse,
+                    bin_dict,
+                )
+                if items:
+                    mr_items.append(items)
+
+    if (not ignore_existing_ordered_qty or get_parent_warehouse_data) and warehouses:
+        new_mr_items = []
+        for item in mr_items:
+            get_materials_from_other_locations(item, warehouses, new_mr_items, company)
+        mr_items = new_mr_items
+
+    if not mr_items:
+        to_enable = frappe.bold(_("Ignore Existing Projected Quantity"))
+        warehouse = frappe.bold(doc.get("for_warehouse"))
+        message = (
+            _("As there are sufficient raw materials, Material Request is not required for Warehouse {0}.").format(warehouse)
+            + "<br><br>"
+        )
+        message += _("If you still want to proceed, please enable {0}.").format(to_enable)
+
+        frappe.msgprint(message, title=_("Note"))
+
+    return mr_items
+
 
 
 def get_materials_from_other_locations(item, warehouses, new_mr_items, company):

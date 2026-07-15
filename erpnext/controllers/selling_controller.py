@@ -205,69 +205,210 @@ class SellingController(StockController):
 			self.in_words = money_in_words(amount, self.currency)
 
 	def calculate_commission(self):
+		"""
+		محاسبه مبلغ واجد شرایط پورسانت با لحاظ کردن تخفیف مشتری
+		این تابع مبلغ کل آیتم‌هایی که grant_commission دارند را محاسبه می‌کند
+		"""
+		# بررسی اینکه فیلد کمیسیون وجود دارد
 		if not self.meta.get_field("commission_rate"):
 			return
 
+		# گرد کردن اعداد
 		self.round_floats_in(self, ("amount_eligible_for_commission", "commission_rate"))
 
-		if not (0 <= self.commission_rate <= 100.0):
-			throw(
+		# کنترل بازه مجاز برای نرخ کمیسیون
+		if not (0 <= flt(self.commission_rate) <= 100.0):
+			frappe.throw(
 				"{} {}".format(
 					_(self.meta.get_label("commission_rate")),
 					_("must be between 0 and 100"),
 				)
 			)
 
-		self.amount_eligible_for_commission = sum(
-			item.base_net_amount for item in self.items if item.grant_commission
-		)
+		# محاسبه مجموع مبلغ آیتم‌هایی که اجازه پورسانت دارند
+		self.amount_eligible_for_commission = flt(getattr(self, "total_structure", 0) or 0)
+				# صفر کردن total_commission برای محاسبه مجدد در calculate_contribution
 
-		self.total_commission = flt(
-			self.amount_eligible_for_commission * self.commission_rate / 100.0,
-			self.precision("total_commission"),
-		)
+
+		# لاگ برای دیباگ
+		frappe.logger().info(f"Amount eligible for commission: {self.amount_eligible_for_commission}")
+
 
 	def calculate_contribution(self):
+		"""
+		محاسبه سهم هر فروشنده بر اساس فرمول جدید:
+		پورسانت مؤثر = max(commission_rate - structure_discount, 0)
+		مشوق = مبلغ کل × پورسانت مؤثر × (درصد شراکت / 100)
+		
+		مثال عملی:
+		- مبلغ کل: 10,000,000 تومان
+		- تخفیف مشتری: 20%
+		- فروشنده 1: کمیسیون 25%، سهم 50% → مؤثر: (25-20) = 5% → مشوق: 10M × 5% × 50% = 250,000
+		- فروشنده 2: کمیسیون 30%، سهم 50% → مؤثر: (30-20) = 10% → مشوق: 10M × 10% × 50% = 500,000
+		"""
+		
 		if not self.meta.get_field("sales_team"):
 			return
 
-		total = 0.0
+		# مقداردهی اولیه
+		total_allocated_percentage = 0.0
+		# Only reset if in draft mode (to avoid UpdateAfterSubmitError)
+		if self.docstatus == 0:
+			self.total_commission = 0
 		sales_team = self.get("sales_team")
 
+		# اعتبارسنجی تیم فروش
 		self.validate_sales_team(sales_team)
 
+		# دریافت تخفیف مشتری (ساختاری) - باید به صورت درصد باشد
+		structure_discount = flt(getattr(self, 'structure_disscount', 0) or 0)
+		
+		# مبلغ پایه برای محاسبه کمیسیون
+		base_amount = flt(self.amount_eligible_for_commission)
+		
+		# لاگ برای دیباگ
+		frappe.logger().info(f"Structure discount: {structure_discount}%")
+		frappe.logger().info(f"Base amount for commission: {base_amount}")
+		
+		# پردازش هر فروشنده
 		for sales_person in sales_team:
+			# گرد کردن اعداد
 			self.round_floats_in(sales_person)
-
+			
+			# دریافت نرخ کمیسیون فردی
+			individual_commission_rate = flt(sales_person.commission_rate or 0)
+			
+			# محاسبه نرخ کمیسیون مؤثر (کمیسیون فردی - تخفیف مشتری)
+			effective_commission_rate = max(individual_commission_rate - structure_discount, 0)
+			
+			# درصد سهم شراکت این فروشنده
+			allocated_percentage = flt(sales_person.allocated_percentage or 0)
+			
+			# محاسبه مبلغ تخصیصی (سهم این فروشنده از مبلغ کل)
 			sales_person.allocated_amount = flt(
-				flt(self.amount_eligible_for_commission) * sales_person.allocated_percentage / 100.0,
+				base_amount * allocated_percentage / 100.0,
 				self.precision("allocated_amount", sales_person),
 			)
-
-			if sales_person.commission_rate:
+			
+			# محاسبه مشوق نهایی
+			if effective_commission_rate > 0:
+				# فرمول: مبلغ کل × نرخ مؤثر × (درصد شراکت / 100)
 				sales_person.incentives = flt(
-					sales_person.allocated_amount * flt(sales_person.commission_rate) / 100.0,
+					base_amount * effective_commission_rate / 100.0 * allocated_percentage / 100.0,
 					self.precision("incentives", sales_person),
 				)
+			else:
+				# اگر نرخ مؤثر صفر یا منفی باشد
+				sales_person.incentives = 0.0
+			
+			# جمع درصدهای تخصیصی
+			total_allocated_percentage += allocated_percentage
+			
+			# اضافه کردن به مجموع کل پورسانت
+			self.total_commission = flt(self.total_commission) + flt(sales_person.incentives)
+			
+			# لاگ تفصیلی برای هر فروشنده
+			frappe.logger().info(f"""
+			Sales Person: {sales_person.sales_person}
+			- Individual Commission Rate: {individual_commission_rate}%
+			- Structure Discount: {structure_discount}%
+			- Effective Rate: {effective_commission_rate}%
+			- Allocated Percentage: {allocated_percentage}%
+			- Allocated Amount: {sales_person.allocated_amount:,.2f}
+			- Final Incentives: {sales_person.incentives:,.2f}
+			""")
+		
+		# اعتبارسنجی: مجموع درصدها باید 100% باشد
+		if sales_team and abs(total_allocated_percentage - 100.0) > 0.01:
+			frappe.throw(_("Total allocated percentage for sales team should be 100%. Current total: {}%").format(total_allocated_percentage))
+		
+		# گرد کردن مجموع نهایی
+		self.total_commission = flt(self.total_commission, self.precision("total_commission"))
+		
+		# لاگ نهایی
+		frappe.logger().info(f"Total Commission Calculated: {self.total_commission:,.2f}")
 
-			total += sales_person.allocated_percentage
-
-		if sales_team and total != 100.0:
-			throw(_("Total allocated percentage for sales team should be 100"))
 
 	def validate_sales_team(self, sales_team):
-		sales_persons = [d.sales_person for d in sales_team]
-
-		if not sales_persons:
+		"""
+		اعتبارسنجی تیم فروش
+		"""
+		if not sales_team:
 			return
+		
+		for sales_person in sales_team:
+			# بررسی نرخ کمیسیون
+			if not (0 <= flt(sales_person.commission_rate or 0) <= 100):
+				frappe.throw(
+					_("Commission rate for {0} must be between 0 and 100%").format(
+						sales_person.sales_person
+					)
+				)
+			
+			# بررسی درصد تخصیص
+			if not (0 <= flt(sales_person.allocated_percentage or 0) <= 100):
+				frappe.throw(
+					_("Allocated percentage for {0} must be between 0 and 100%").format(
+						sales_person.sales_person
+					)
+				)
 
-		sales_person_status = frappe.db.get_all(
-			"Sales Person", filters={"name": ["in", sales_persons]}, fields=["name", "enabled"]
-		)
 
-		for row in sales_person_status:
-			if not row.enabled:
-				frappe.throw(_("Sales Person <b>{0}</b> is disabled.").format(row.name))
+	# تابع کمکی برای تست و دیباگ
+	def debug_commission_calculation(doc):
+		"""
+		تابع کمکی برای تست محاسبات کمیسیون
+		"""
+		print("\n" + "="*50)
+		print("DEBUG: Commission Calculation")
+		print("="*50)
+		
+		print(f"Document: {doc.name}")
+		print(f"Amount Eligible for Commission: {flt(doc.amount_eligible_for_commission):,.2f}")
+		print(f"Structure Discount: {flt(getattr(doc, 'structure_disscount', 0))}%")
+		print(f"Total Commission: {flt(doc.total_commission):,.2f}")
+		
+		if hasattr(doc, 'sales_team') and doc.sales_team:
+			print(f"\nSales Team Details:")
+			print("-" * 30)
+			
+			for i, sp in enumerate(doc.sales_team, 1):
+				effective_rate = max(flt(sp.commission_rate) - flt(getattr(doc, 'structure_disscount', 0)), 0)
+				print(f"{i}. {sp.sales_person}")
+				print(f"   Commission Rate: {flt(sp.commission_rate)}%")
+				print(f"   Effective Rate: {effective_rate}%")
+				print(f"   Allocated %: {flt(sp.allocated_percentage)}%")
+				print(f"   Allocated Amount: {flt(sp.allocated_amount):,.2f}")
+				print(f"   Incentives: {flt(sp.incentives):,.2f}")
+				print()
+		
+		print("="*50 + "\n")
+
+
+	# نمونه استفاده در Server Script
+	"""
+	# در فایل hooks.py یا custom app:
+
+	doc_events = {
+		"Sales Order": {
+			"before_save": "custom_app.commission.calculate_commission_and_contribution"
+		},
+		"Sales Invoice": {
+			"before_save": "custom_app.commission.calculate_commission_and_contribution"
+		}
+	}
+
+	# در فایل commission.py:
+	def calculate_commission_and_contribution(doc, method):
+		if hasattr(doc, 'calculate_commission'):
+			doc.calculate_commission()
+		if hasattr(doc, 'calculate_contribution'):  
+			doc.calculate_contribution()
+		
+		# برای دیباگ (فقط در development)
+		if frappe.conf.developer_mode:
+			debug_commission_calculation(doc)
+	"""
 
 	def validate_max_discount(self):
 		for d in self.get("items"):

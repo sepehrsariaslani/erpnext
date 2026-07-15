@@ -4,17 +4,31 @@
 
 from frappe import _
 
-from erpnext.controllers.trends import get_columns, get_data
+from erpnext.controllers.trends import (
+	collapse_period_columns_to_amount_only,
+	convert_period_columns_to_jalali,
+	get_columns,
+	get_data,
+	is_jalali_calendar_mode,
+)
 
 
 def execute(filters=None):
 	if not filters:
 		filters = {}
-	data = []
-	conditions = get_columns(filters, "Delivery Note")
-	data = get_data(filters, conditions)
 
+	conditions = get_columns(filters, "Delivery Note")
+	jalali_mode = is_jalali_calendar_mode(filters)
+	if jalali_mode:
+		conditions["columns"] = convert_period_columns_to_jalali(conditions.get("columns") or [], filters)
+
+	data = get_data(filters, conditions)
 	chart_data = get_chart_data(data, filters)
+
+	if jalali_mode:
+		conditions["columns"], data = collapse_period_columns_to_amount_only(
+			conditions.get("columns") or [], data, filters
+		)
 
 	return conditions["columns"], data, None, chart_data
 

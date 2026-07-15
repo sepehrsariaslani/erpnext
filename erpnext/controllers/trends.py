@@ -1,12 +1,29 @@
 # Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
 # License: GNU General Public License v3. See license.txt
 
-
+import re
 import frappe
 from frappe import _
 from frappe.utils import DateTimeLikeObject, getdate, today
 
 from erpnext.accounts.utils import get_fiscal_year
+
+
+PERSIAN_MONTHS = [
+	"",
+	"فروردین",
+	"اردیبهشت",
+	"خرداد",
+	"تیر",
+	"مرداد",
+	"شهریور",
+	"مهر",
+	"آبان",
+	"آذر",
+	"دی",
+	"بهمن",
+	"اسفند",
+]
 
 
 def get_columns(filters, trans):
@@ -259,6 +276,275 @@ def calculate_total_row(data, columns):
 
 def get_mon(dt):
 	return getdate(dt).strftime("%b")
+
+
+def _as_bool(value) -> bool:
+	if isinstance(value, bool):
+		return value
+	if value is None:
+		return False
+	return str(value).strip().lower() not in {"0", "false", "no", "off", ""}
+
+
+def is_jalali_calendar_mode(filters) -> bool:
+	lang = str(getattr(frappe.local, "lang", "") or "")
+	return _as_bool((filters or {}).get("__jalali_calendar_mode")) or lang.startswith("fa")
+
+
+def get_period_start_index(filters) -> int:
+	if filters.get("based_on") in ["Customer", "Supplier"]:
+		start = 3
+	elif filters.get("based_on") in ["Item"]:
+		start = 2
+	else:
+		start = 1
+	if filters.get("group_by"):
+		start += 1
+	return start
+
+
+def _to_jalali(gy: int, gm: int, gd: int) -> tuple[int, int, int]:
+	g_days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+	j_days_in_month = [31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29]
+
+	if (gy % 4 == 0 and gy % 100 != 0) or (gy % 400 == 0):
+		g_days_in_month[1] = 29
+
+	gy2 = gy - 1600
+	gm2 = gm - 1
+	gd2 = gd - 1
+
+	g_day_no = 365 * gy2 + (gy2 + 3) // 4 - (gy2 + 99) // 100 + (gy2 + 399) // 400
+	for i in range(gm2):
+		g_day_no += g_days_in_month[i]
+	g_day_no += gd2
+
+	j_day_no = g_day_no - 79
+	j_np = j_day_no // 12053
+	j_day_no %= 12053
+
+	jy = 979 + 33 * j_np + 4 * (j_day_no // 1461)
+	j_day_no %= 1461
+
+	if j_day_no >= 366:
+		jy += (j_day_no - 1) // 365
+		j_day_no = (j_day_no - 1) % 365
+
+	jm = 0
+	for i in range(11):
+		if j_day_no >= j_days_in_month[i]:
+			j_day_no -= j_days_in_month[i]
+			jm += 1
+		else:
+			break
+
+	jd = j_day_no + 1
+	return jy, jm + 1, jd
+
+
+def _to_jalali_month_name(gregorian_date) -> str:
+	d = getdate(gregorian_date)
+	_, jm, _ = _to_jalali(d.year, d.month, d.day)
+	if 1 <= jm <= 12:
+		return PERSIAN_MONTHS[jm]
+	return ""
+
+
+def get_jalali_period_labels(filters) -> list[str]:
+	period = (filters or {}).get("period")
+	fiscal_year = (filters or {}).get("fiscal_year")
+	if not period or not fiscal_year:
+		return []
+
+	labels = []
+	for start_date, end_date in get_period_date_ranges(period, fiscal_year):
+		start_month = _to_jalali_month_name(start_date)
+		if period == "Monthly":
+			labels.append(start_month)
+			continue
+		end_month = _to_jalali_month_name(end_date)
+		if not end_month or end_month == start_month:
+			labels.append(start_month)
+		else:
+			labels.append(f"{start_month}-{end_month}")
+	return labels
+
+
+def _split_column_spec(column_spec):
+	if not isinstance(column_spec, str):
+		return column_spec, ""
+	head, sep, tail = column_spec.partition(":")
+	return head, (f":{tail}" if sep else "")
+
+
+def _get_column_metric_label(head: str) -> str:
+	if re.search(r"\(\s*qty\s*\)", head, flags=re.IGNORECASE):
+		return "تعداد"
+	if re.search(r"\(\s*amt\s*\)", head, flags=re.IGNORECASE):
+		return "مبلغ"
+	return ""
+
+
+def _translate_qty_amt_tokens(text: str) -> str:
+	return (
+		re.sub(r"\(\s*qty\s*\)", "(تعداد)", text, flags=re.IGNORECASE)
+		.replace("(Qty)", "(تعداد)")
+		.replace("(qty)", "(تعداد)")
+		.replace("(Amt)", "(مبلغ)")
+		.replace("(amt)", "(مبلغ)")
+	)
+
+
+def convert_period_columns_to_jalali(columns: list, filters) -> list:
+	if not isinstance(columns, list) or not columns:
+		return columns
+
+	start = get_period_start_index(filters or {})
+	if start >= len(columns) - 2:
+		return columns
+
+	period_labels = get_jalali_period_labels(filters or {})
+	pre_columns = columns[:start]
+	period_columns = columns[start:-2]
+	total_columns = columns[-2:]
+	converted_period = []
+
+	for index, column_spec in enumerate(period_columns):
+		if not isinstance(column_spec, str):
+			converted_period.append(column_spec)
+			continue
+		head, tail = _split_column_spec(column_spec)
+		metric_label = _get_column_metric_label(head)
+		period_idx = index // 2
+		base_label = period_labels[period_idx] if period_idx < len(period_labels) else ""
+		if base_label:
+			converted_head = f"{metric_label} - {base_label}" if metric_label else base_label
+			converted_period.append(f"{converted_head}{tail}")
+		else:
+			converted_period.append(f"{_translate_qty_amt_tokens(head)}{tail}")
+
+	translated_totals = []
+	for column_spec in total_columns:
+		if not isinstance(column_spec, str):
+			translated_totals.append(column_spec)
+			continue
+		head, tail = _split_column_spec(column_spec)
+		translated_totals.append(f"{_translate_qty_amt_tokens(head)}{tail}")
+
+	return pre_columns + converted_period + translated_totals
+
+
+def clean_period_label_for_chart(label: str) -> str:
+	return (
+		str(label or "")
+		.replace("مبلغ - ", "")
+		.replace("تعداد - ", "")
+		.replace(" (Amt)", "")
+		.replace(" (Qty)", "")
+		.replace(" (مبلغ)", "")
+		.replace(" (تعداد)", "")
+	)
+
+
+def _strip_amount_metric_from_head(head: str) -> str:
+	return (
+		head.replace("مبلغ - ", "")
+		.replace("Amount - ", "")
+		.replace("Amt - ", "")
+		.replace("(مبلغ)", "")
+		.replace("(Amt)", "")
+		.strip()
+	)
+
+
+def normalize_rows_to_column_count(data: list, columns: list) -> list:
+	expected = len(columns or [])
+	if not expected:
+		return data
+
+	normalized = []
+	for row in data or []:
+		if isinstance(row, dict):
+			normalized.append(row)
+			continue
+		if isinstance(row, tuple):
+			row = list(row)
+		elif not isinstance(row, list):
+			row = [row]
+
+		if len(row) < expected:
+			row = row + [None] * (expected - len(row))
+		elif len(row) > expected:
+			row = row[:expected]
+
+		normalized.append(row)
+	return normalized
+
+
+def collapse_period_columns_to_amount_only(columns: list, data: list, filters):
+	if not isinstance(columns, list) or not columns:
+		return columns, data
+
+	start = get_period_start_index(filters or {})
+	if start >= len(columns) - 2:
+		return columns, normalize_rows_to_column_count(data, columns)
+
+	pre_columns = columns[:start]
+	period_columns = columns[start:-2]
+	total_amount_column = columns[-1]
+	amount_columns = []
+
+	for period_index, column_spec in enumerate(period_columns):
+		if period_index % 2 == 0:
+			continue
+		if not isinstance(column_spec, str):
+			amount_columns.append(column_spec)
+			continue
+		head, tail = _split_column_spec(column_spec)
+		amount_columns.append(f"{_strip_amount_metric_from_head(head)}{tail}")
+
+	if isinstance(total_amount_column, str):
+		total_head, total_tail = _split_column_spec(total_amount_column)
+		total_amount_column = f"{_strip_amount_metric_from_head(total_head)}{total_tail}"
+
+	new_columns = pre_columns + amount_columns + [total_amount_column]
+	new_data = []
+
+	for row in data or []:
+		if isinstance(row, dict):
+			new_data.append(row)
+			continue
+		if isinstance(row, tuple):
+			row = list(row)
+		elif not isinstance(row, list):
+			row = [row]
+
+		if len(row) < start + 2:
+			new_data.append(row)
+			continue
+
+		pre_values = row[:start]
+		period_values = row[start:-2]
+		amount_values = period_values[1::2]
+		total_amount_value = row[-1] if row else None
+		new_data.append(pre_values + amount_values + [total_amount_value])
+
+	return new_columns, normalize_rows_to_column_count(new_data, new_columns)
+
+
+def apply_jalali_period_labels_to_chart(chart_data: dict, filters) -> None:
+	if not isinstance(chart_data, dict):
+		return
+	data = chart_data.get("data")
+	if not isinstance(data, dict):
+		return
+	labels = data.get("labels")
+	if not isinstance(labels, list):
+		return
+
+	period_labels = get_jalali_period_labels(filters or {})
+	if period_labels:
+		data["labels"] = period_labels[: len(labels)]
 
 
 def period_wise_columns_query(filters, trans):

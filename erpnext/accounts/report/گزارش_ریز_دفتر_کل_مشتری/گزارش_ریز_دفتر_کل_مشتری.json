@@ -1,0 +1,51 @@
+{
+ "add_total_row": 0,
+ "add_translate_data": 0,
+ "columns": [],
+ "creation": "2025-07-23 12:39:04.630389",
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [
+  {
+   "fieldname": "from_date",
+   "fieldtype": "Date",
+   "label": "from_date",
+   "mandatory": 0,
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "to_date",
+   "fieldtype": "Date",
+   "label": "to_date",
+   "mandatory": 0,
+   "wildcard_filter": 0
+  }
+ ],
+ "idx": 0,
+ "is_standard": "Yes",
+ "json": "{}",
+ "letter_head": "\u0637\u0631\u062d \u062c\u062f\u06cc\u062f",
+ "letterhead": null,
+ "modified": "2025-08-27 15:03:25.597185",
+ "modified_by": "Administrator",
+ "module": "Accounts",
+ "name": "\u06af\u0632\u0627\u0631\u0634 \u0631\u06cc\u0632 \u062f\u0641\u062a\u0631 \u06a9\u0644 \u0645\u0634\u062a\u0631\u06cc",
+ "owner": "Administrator",
+ "prepared_report": 0,
+ "query": "-- \u0631\u062f\u06cc\u0641 \u062e\u0644\u0627\u0635\u0647 \u0641\u0627\u06a9\u062a\u0648\u0631 (Master)\nSELECT \n    si.posting_date AS '\u062a\u0627\u0631\u06cc\u062e',\n    'Sales Invoice' AS '\u0646\u0648\u0639 \u0633\u0646\u062f',\n    si.name AS '\u0634\u0645\u0627\u0631\u0647 \u0633\u0646\u062f',\n    si.debit_to AS '\u062d\u0633\u0627\u0628',\n    '\u0645\u0634\u062a\u0631\u06cc' AS '\u0646\u0648\u0639 \u0637\u0631\u0641 \u062d\u0633\u0627\u0628',\n    si.customer AS '\u0637\u0631\u0641 \u062d\u0633\u0627\u0628',\n    NULL AS '\u06a9\u062f \u0622\u06cc\u062a\u0645',\n    NULL AS '\u0646\u0627\u0645 \u0622\u06cc\u062a\u0645',\n    NULL AS '\u062a\u0639\u062f\u0627\u062f',\n    NULL AS '\u0642\u06cc\u0645\u062a \u0648\u0627\u062d\u062f',\n    NULL AS '\u0645\u0628\u0644\u063a \u0646\u0647\u0627\u06cc\u06cc \u0622\u06cc\u062a\u0645',\n    NULL AS '\u062a\u062e\u0641\u06cc\u0641 \u0622\u06cc\u062a\u0645',\n    NULL AS '\u0633\u0647\u0645 \u062a\u062e\u0641\u06cc\u0641 \u06a9\u0644',\n    si.grand_total AS '\u0628\u062f\u0647\u06a9\u0627\u0631',  -- \u0641\u0642\u0637 \u0631\u062f\u06cc\u0641 Master \u0628\u062f\u0647\u06a9\u0627\u0631 \u062f\u0627\u0631\u062f\n    0 AS '\u0628\u0633\u062a\u0627\u0646\u06a9\u0627\u0631',\n    NULL AS '\u0646\u0648\u0639 \u067e\u0631\u062f\u0627\u062e\u062a',\n    NULL AS '\u0634\u0645\u0627\u0631\u0647 \u0645\u0631\u062c\u0639 \u067e\u0631\u062f\u0627\u062e\u062a',\n    NULL AS '\u0645\u0627\u0646\u062f\u0647 \u0627\u0641\u062a\u062a\u0627\u062d\u06cc\u0647',\n    NULL AS '\u0645\u0627\u0646\u062f\u0647 \u062a\u062c\u0645\u0639\u06cc',\n    si.remarks AS '\u062a\u0648\u0636\u06cc\u062d\u0627\u062a'\nFROM `tabSales Invoice` si\nWHERE si.posting_date BETWEEN %(from_date)s AND %(to_date)s\n\nUNION ALL\n\n-- \u0631\u062f\u06cc\u0641\u200c\u0647\u0627\u06cc \u0622\u06cc\u062a\u0645 \u0641\u0627\u06a9\u062a\u0648\u0631 (Detail)\nSELECT \n    si.posting_date AS '\u062a\u0627\u0631\u06cc\u062e',\n    'Sales Invoice' AS '\u0646\u0648\u0639 \u0633\u0646\u062f',\n    si.name AS '\u0634\u0645\u0627\u0631\u0647 \u0633\u0646\u062f',\n    si.debit_to AS '\u062d\u0633\u0627\u0628',\n    '\u0645\u0634\u062a\u0631\u06cc' AS '\u0646\u0648\u0639 \u0637\u0631\u0641 \u062d\u0633\u0627\u0628',\n    si.customer AS '\u0637\u0631\u0641 \u062d\u0633\u0627\u0628',\n    sii.item_code AS '\u06a9\u062f \u0622\u06cc\u062a\u0645',\n    sii.item_name AS '\u0646\u0627\u0645 \u0622\u06cc\u062a\u0645',\n    sii.qty AS '\u062a\u0639\u062f\u0627\u062f',\n    sii.rate AS '\u0642\u06cc\u0645\u062a \u0648\u0627\u062d\u062f',\n    COALESCE(sii.amount,0)-COALESCE(sii.discount_amount,0) AS '\u0645\u0628\u0644\u063a \u0646\u0647\u0627\u06cc\u06cc \u0622\u06cc\u062a\u0645',\n    COALESCE(sii.discount_amount,0) AS '\u062a\u062e\u0641\u06cc\u0641 \u0622\u06cc\u062a\u0645',\n    CASE WHEN COALESCE(si.discount_amount,0) > 0 \n        THEN (COALESCE(sii.amount,0)/NULLIF(COALESCE(si.total,0),0)) * COALESCE(si.discount_amount,0)\n        ELSE 0\n    END AS '\u0633\u0647\u0645 \u062a\u062e\u0641\u06cc\u0641 \u06a9\u0644',\n    NULL AS '\u0628\u062f\u0647\u06a9\u0627\u0631',  -- \u0622\u06cc\u062a\u0645\u200c\u0647\u0627 \u0628\u062f\u0647\u06a9\u0627\u0631 \u0646\u062f\u0627\u0631\u0646\u062f\n    NULL AS '\u0628\u0633\u062a\u0627\u0646\u06a9\u0627\u0631',\n    NULL AS '\u0646\u0648\u0639 \u067e\u0631\u062f\u0627\u062e\u062a',\n    NULL AS '\u0634\u0645\u0627\u0631\u0647 \u0645\u0631\u062c\u0639 \u067e\u0631\u062f\u0627\u062e\u062a',\n    NULL AS '\u0645\u0627\u0646\u062f\u0647 \u0627\u0641\u062a\u062a\u0627\u062d\u06cc\u0647',\n    NULL AS '\u0645\u0627\u0646\u062f\u0647 \u062a\u062c\u0645\u0639\u06cc',\n    sii.remarks AS '\u062a\u0648\u0636\u06cc\u062d\u0627\u062a'\nFROM `tabSales Invoice Item` sii\nJOIN `tabSales Invoice` si ON sii.parent = si.name\nWHERE si.posting_date BETWEEN %(from_date)s AND %(to_date)s\n\nORDER BY '\u0634\u0645\u0627\u0631\u0647 \u0633\u0646\u062f', '\u06a9\u062f \u0622\u06cc\u062a\u0645'\n",
+ "ref_doctype": "GL Entry",
+ "reference_report": "",
+ "report_name": "\u06af\u0632\u0627\u0631\u0634 \u0631\u06cc\u0632 \u062f\u0641\u062a\u0631 \u06a9\u0644 \u0645\u0634\u062a\u0631\u06cc",
+ "report_script": "",
+ "report_type": "Report Builder",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Accounts Manager"
+  }
+ ],
+ "timeout": 0
+}

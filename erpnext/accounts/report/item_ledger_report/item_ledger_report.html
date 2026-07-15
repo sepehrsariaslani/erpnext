@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>گزارش دفتر کل با جزئیات اقلام</title>
+    <style>
+        .table-bordered { border-collapse: collapse; width: 100%; }
+        .table-bordered th, .table-bordered td { border: 1px solid #ddd; padding: 8px; }
+        .table-bordered th { background-color: #f5f5f5; font-weight: bold; }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .text-muted { color: #666; }
+        .voucher-row { background-color: #f9f9f9; font-weight: bold; }
+        .item-row { background-color: #ffffff; font-size: 0.9em; }
+        .discount-row { background-color: #fff3cd; font-size: 0.9em; color: #856404; }
+        .opening-row { background-color: #e8f4f8; font-weight: bold; }
+        .total-row { background-color: #d4edda; font-weight: bold; color: #155724; }
+        .closing-row { background-color: #cce5ff; font-weight: bold; color: #004085; }
+        .overflow-wrap-anywhere { overflow-wrap: anywhere; }
+        h2, h4, h5, h6 { margin: 10px 0; }
+        hr { margin: 20px 0; }
+    </style>
+</head>
+<body>
+
+<h2 class="text-center">{%= __("Item Ledger Report") %}</h2>
+<h4 class="text-center">
+    {% if (filters.party_name) { %}
+        {%= filters.party_name %}
+    {% } else if (filters.party && filters.party.length) { %}
+        {%= filters.party.join(", ") %}
+    {% } else if (filters.account) { %}
+        {%= filters.account %}
+    {% } %}
+</h4>
+
+<h6 class="text-center">
+    {% if (filters.tax_id) { %}
+    {%= __("Tax Id: ")%}{%= filters.tax_id %}
+    {% } %}
+</h6>
+
+<h5 class="text-center">
+    {%= frappe.datetime.str_to_user(filters.from_date) %}
+    {%= __("to") %}
+    {%= frappe.datetime.str_to_user(filters.to_date) %}
+</h5>
+<hr>
+
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th style="width: 8%">تاریخ شمسی</th>
+            <th style="width: 8%">تاریخ</th>
+            <th style="width: 12%">مرجع</th>
+            <th style="width: 10%">طرف حساب</th>
+            <th style="width: 15%">نام کالا</th>
+            <th style="width: 5%">تعداد</th>
+            <th style="width: 7%">نرخ</th>
+            <th style="width: 7%">مبلغ</th>
+            <th style="width: 8%">بدهکار</th>
+            <th style="width: 8%">بستانکار</th>
+            <th style="width: 12%">مانده</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for(var i=0, l=data.length; i<l; i++) { %}
+            {% var row_class = ""; %}
+            {% if (data[i].row_type == "voucher") { %}
+                {% row_class = "voucher-row"; %}
+            {% } else if (data[i].row_type == "item") { %}
+                {% row_class = "item-row"; %}
+            {% } else if (data[i].row_type == "discount") { %}
+                {% row_class = "discount-row"; %}
+            {% } else if (data[i].row_type == "opening") { %}
+                {% row_class = "opening-row"; %}
+            {% } else if (data[i].row_type == "total") { %}
+                {% row_class = "total-row"; %}
+            {% } else if (data[i].row_type == "closing") { %}
+                {% row_class = "closing-row"; %}
+            {% } %}
+            
+            <tr class="{%= row_class %}">
+                <!-- Jalali Date -->
+                <td>
+                    {% if(data[i].jalali_date) { %}
+                        {%= data[i].jalali_date %}
+                    {% } %}
+                </td>
+                
+                <!-- Date -->
+                <td>
+                    {% if(data[i].posting_date) { %}
+                        {%= frappe.datetime.str_to_user(data[i].posting_date) %}
+                    {% } %}
+                </td>
+                
+                <!-- Reference -->
+                <td>
+                    {% if(data[i].reference) { %}
+                        {%- data[i].reference -%}
+                    {% } %}
+                </td>
+                
+                <!-- Party -->
+                <td>
+                    {% if(data[i].party_display) { %}
+                        {%= data[i].party_display %}
+                    {% } %}
+                </td>
+                
+                <!-- Item Name -->
+                <td>
+                    {% if(data[i].item_name) { %}
+                        {%= data[i].item_name %}
+                    {% } %}
+                </td>
+                
+                <!-- Qty -->
+                <td class="text-right">
+                    {% if(data[i].qty !== null && data[i].qty !== undefined) { %}
+                        {%= format_number(data[i].qty, null, 2) %}
+                    {% } %}
+                </td>
+                
+                <!-- Rate -->
+                <td class="text-right">
+                    {% if(data[i].rate !== null && data[i].rate !== undefined) { %}
+                        {%= format_currency(data[i].rate, filters.presentation_currency || filters.account_currency) %}
+                    {% } %}
+                </td>
+                
+                <!-- Item Amount -->
+                <td class="text-right">
+                    {% if(data[i].item_amount !== null && data[i].item_amount !== undefined) { %}
+                        {%= format_currency(data[i].item_amount, filters.presentation_currency || filters.account_currency) %}
+                    {% } %}
+                </td>
+                
+                <!-- Debit -->
+                <td class="text-right">
+                    {% if(data[i].debit !== null && data[i].debit !== undefined && data[i].debit !== 0) { %}
+                        {%= format_currency(data[i].debit, filters.presentation_currency || filters.account_currency) %}
+                    {% } %}
+                </td>
+                
+                <!-- Credit -->
+                <td class="text-right">
+                    {% if(data[i].credit !== null && data[i].credit !== undefined && data[i].credit !== 0) { %}
+                        {%= format_currency(data[i].credit, filters.presentation_currency || filters.account_currency) %}
+                    {% } %}
+                </td>
+                
+                <!-- Balance -->
+                <td class="text-right">
+                    {% if(data[i].balance !== null && data[i].balance !== undefined) { %}
+                        {%= format_currency(data[i].balance, filters.presentation_currency || filters.account_currency) %}
+                    {% } %}
+                </td>
+            </tr>
+        {% } %}                <!-- Date -->
+                <td>
+                    {% if(data[i].posting_date) { %}
+                        {%= frappe.datetime.str_to_user(data[i].posting_date) %}
+                    {% } %}
+                </td>
+                
+                <!-- Reference -->
+                <td>
+                    {% if(data[i].reference) { %}
+                        {%- data[i].reference -%}
+                    {% } %}
+                </td>
+                
+                <!-- Party -->
+                <td>
+                    {% if(data[i].party_display) { %}
+                        {%= data[i].party_display %}
+                    {% } %}
+                </td>
+                
+                <!-- Item Name -->
+                <td>
+                    {% if(data[i].item_name) { %}
+                        {%= data[i].item_name %}
+                    {% } %}
+                </td>
+                
+                <!-- Qty -->
+                <td class="text-right">
+                    {% if(data[i].qty !== null && data[i].qty !== undefined) { %}
+                        {%= format_number(data[i].qty, null, 2) %}
+                    {% } %}
+                </td>
+                
+                <!-- Rate -->
+                <td class="text-right">
+                    {% if(data[i].rate !== null && data[i].rate !== undefined) { %}
+                        {%= format_currency(data[i].rate, filters.presentation_currency || filters.account_currency) %}
+                    {% } %}
+                </td>
+                
+                <!-- Item Amount -->
+                <td class="text-right">
+                    {% if(data[i].item_amount !== null && data[i].item_amount !== undefined) { %}
+                        {%= format_currency(data[i].item_amount, filters.presentation_currency || filters.account_currency) %}
+                    {% } %}
+                </td>
+                
+                <!-- Debit -->
+                <td class="text-right">
+                    {% if(data[i].debit !== null && data[i].debit !== undefined && data[i].debit !== 0) { %}
+                        {%= format_currency(data[i].debit, filters.presentation_currency || filters.account_currency) %}
+                    {% } %}
+                </td>
+                
+                <!-- Credit -->
+                <td class="text-right">
+                    {% if(data[i].credit !== null && data[i].credit !== undefined && data[i].credit !== 0) { %}
+                        {%= format_currency(data[i].credit, filters.presentation_currency || filters.account_currency) %}
+                    {% } %}
+                </td>
+                
+                <!-- Balance -->
+                <td class="text-right">
+                    {% if(data[i].balance !== null && data[i].balance !== undefined) { %}
+                        {%= format_currency(data[i].balance, filters.presentation_currency || filters.account_currency) %}
+                    {% } %}
+                </td>
+            </tr>
+        {% } %}
+    </tbody>
+</table>
+
+<p class="text-right text-muted">
+    {%= __("Printed on {0}", [frappe.datetime.str_to_user(frappe.datetime.get_datetime_as_string())]) %}
+</p>
+
+</body>
+</html>

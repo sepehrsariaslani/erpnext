@@ -1,0 +1,64 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:floor_name",
+ "creation": "2025-08-26 12:58:06.974701",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "floor_name",
+  "total_space",
+  "monthly_rent",
+  "rent_per_meter"
+ ],
+ "fields": [
+  {
+   "fieldname": "total_space",
+   "fieldtype": "Data",
+   "label": "Total Space"
+  },
+  {
+   "fieldname": "monthly_rent",
+   "fieldtype": "Currency",
+   "label": "Monthly Rent"
+  },
+  {
+   "fieldname": "rent_per_meter",
+   "fieldtype": "Currency",
+   "label": "Rent Per Meter"
+  },
+  {
+   "fieldname": "floor_name",
+   "fieldtype": "Data",
+   "label": "Floor Name",
+   "unique": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-08-26 13:06:02.030936",
+ "modified_by": "Administrator",
+ "module": "Manufacturing",
+ "name": "Floor Plan Costs",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

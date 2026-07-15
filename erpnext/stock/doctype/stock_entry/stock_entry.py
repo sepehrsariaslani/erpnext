@@ -57,6 +57,21 @@ from erpnext.stock.stock_ledger import NegativeStockError, get_previous_sle, get
 from erpnext.stock.utils import get_bin, get_combine_datetime, get_incoming_rate
 
 
+def resolve_backflush_based_on(bom_no):
+	"""Version-safe backflush lookup for mixed ERPNext installs."""
+	if not bom_no:
+		return frappe.db.get_single_value("Manufacturing Settings", "backflush_raw_materials_based_on")
+
+	try:
+		from erpnext.manufacturing.doctype.bom.bom import get_backflush_based_on
+
+		return get_backflush_based_on(bom_no)
+	except (ImportError, AttributeError):
+		return frappe.db.get_value("BOM", bom_no, "backflush_based_on") or frappe.db.get_single_value(
+			"Manufacturing Settings", "backflush_raw_materials_based_on"
+		)
+
+
 class FinishedGoodError(frappe.ValidationError):
 	pass
 
@@ -956,18 +971,16 @@ class StockEntry(StockController, SubcontractingInwardController):
 
 				work_order_link = get_link_to_form("Work Order", self.work_order)
 				job_card_link = get_link_to_form("Job Card", job_card)
-				frappe.throw(
-					_(
-						"Row #{0}: Operation {1} is not completed for {2} qty of finished goods in Work Order {3}. Please update operation status via Job Card {4}."
-					).format(
-						d.idx,
-						frappe.bold(d.operation),
-						frappe.bold(total_completed_qty),
-						work_order_link,
-						job_card_link,
-					),
-					OperationsNotCompleteError,
+				msg = _(
+					"Row #{0}: Operation {1} is not completed for {2} qty of finished goods in Work Order. Please update operation status via Job Card."
+				).format(
+					d.idx,
+					frappe.bold(d.operation),
+					frappe.bold(total_completed_qty),
 				)
+				msg += "<br><br>" + _("Work Order") + ": " + work_order_link
+				msg += "<br>" + _("Job Card") + ": " + job_card_link
+				frappe.throw(msg, OperationsNotCompleteError)
 
 	def check_duplicate_entry_for_work_order(self):
 		other_ste = [
@@ -2725,9 +2738,7 @@ class StockEntry(StockController, SubcontractingInwardController):
 		self.set("items", sorted_items)
 
 	def get_backflush_based_on(self):
-		from erpnext.manufacturing.doctype.bom.bom import get_backflush_based_on
-
-		return get_backflush_based_on(self.bom_no)
+		return resolve_backflush_based_on(self.bom_no)
 
 	def get_available_reserved_materials(self):
 		reserved_entries = self.get_reserved_materials()

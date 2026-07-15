@@ -19,6 +19,7 @@ from erpnext.accounts.doctype.accounting_dimension.accounting_dimension import (
 )
 from erpnext.accounts.report.utils import convert_to_presentation_currency, get_currency
 from erpnext.accounts.utils import get_fiscal_year, get_zero_cutoff
+from erpnext.regional.iran.memorandum_accounts import has_memorandum_field
 
 
 def get_period_list(
@@ -373,12 +374,18 @@ def add_total_row(out, root_type, balance_must_be, period_list, company_currency
 
 
 def get_accounts(company, root_type):
+	conditions = ["company=%s", "root_type=%s"]
+	args = [company, root_type]
+
+	if has_memorandum_field():
+		conditions.append("ifnull(is_memorandum, 0)=0")
+
 	return frappe.db.sql(
-		"""
+		f"""
 		select name, account_number, parent_account, lft, rgt, root_type, report_type, account_name, include_in_gross, account_type, is_group, lft, rgt
 		from `tabAccount`
-		where company=%s and root_type=%s order by lft""",
-		(company, root_type),
+		where {' and '.join(conditions)} order by lft""",
+		tuple(args),
 		as_dict=True,
 	)
 
@@ -578,13 +585,21 @@ def get_accounting_entries(
 def get_account_filter_query(root_lft, root_rgt, root_type, gl_entry):
 	acc = frappe.qb.DocType("Account")
 	exists_query = (
-		frappe.qb.from_(acc).select(acc.name).where(acc.name == gl_entry.account).where(acc.is_group == 0)
+		frappe.qb.from_(acc)
+		.select(acc.name)
+		.where(acc.name == gl_entry.account)
+		.where(acc.is_group == 0)
+		.where(acc.company == gl_entry.company)
 	)
 	if root_lft and root_rgt:
 		exists_query = exists_query.where(acc.lft >= root_lft).where(acc.rgt <= root_rgt)
 
 	if root_type:
 		exists_query = exists_query.where(acc.root_type == root_type)
+		exists_query = exists_query.where(acc.company == gl_entry.company)
+
+	if has_memorandum_field():
+		exists_query = exists_query.where(acc.is_memorandum == 0)
 
 	return exists_query
 
@@ -640,6 +655,18 @@ def apply_additional_conditions(doctype, query, from_date, ignore_closing_entrie
 					)
 
 				query = query.where(gl_entry[dimension.fieldname].isin(filters[dimension.fieldname]))
+
+	if has_memorandum_field():
+		acc = frappe.qb.DocType("Account")
+		query = query.where(
+			ExistsCriterion(
+				frappe.qb.from_(acc)
+				.select(acc.name)
+				.where(acc.name == gl_entry.account)
+				.where(acc.company == gl_entry.company)
+				.where(acc.is_memorandum == 0)
+			)
+		)
 
 	return query
 

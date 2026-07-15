@@ -1,0 +1,467 @@
+/* installment_calculator/installment_calculator/page/financing_calculator/financing_calculator.css */
+
+.installment-calculator-page {
+    font-family: 'Tahoma', 'Yekan', Arial, sans-serif;
+    direction: rtl;
+    text-align: right;
+}
+
+.installment-calculator-page .card {
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    border: none;
+    margin-bottom: 20px;
+}
+
+.installment-calculator-page .card-header {
+    background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+    color: white;
+    border-radius: 10px 10px 0 0 !important;
+    padding: 15px 20px;
+    border-bottom: none;
+}
+
+.installment-calculator-page .card-header h4 {
+    margin: 0;
+    font-weight: bold;
+}
+
+.installment-calculator-page .card-body {
+    padding: 20px;
+}
+
+/* جدول آیتم‌ها */
+.installment-calculator-page #items-table {
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.installment-calculator-page #items-table thead th {
+    background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
+    color: white;
+    text-align: center;
+    font-weight: bold;
+    border: none;
+    padding: 12px 8px;
+}
+
+.installment-calculator-page #items-table tbody td {
+    vertical-align: middle;
+    border-color: #e0e0e0;
+    padding: 10px 8px;
+}
+
+.installment-calculator-page #items-table tfoot td {
+    background-color: #f8f9fa;
+    font-weight: bold;
+    border-top: 2px solid #dee2e6;
+}
+
+.installment-calculator-page .remove-item {
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* فیلدهای فرم */
+.installment-calculator-page .form-control {
+    border-radius: 6px;
+    border: 1px solid #ddd;
+    padding: 8px 12px;
+    transition: all 0.3s ease;
+}
+
+.installment-calculator-page .form-control:focus {
+    border-color: #2196f3;
+    box-shadow: 0 0 0 0.2rem rgba(33, 150, 243, 0.25);
+}
+
+.installment-calculator-page .form-group label {
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 5px;
+}
+
+/* خلاصه محاسبات */
+.installment-calculator-page .summary-stats {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: 8px;
+    padding: 20px;
+    margin: 10px 0;
+}
+
+.installment-calculator-page .stat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.installment-calculator-page .stat-item:last-child {
+    border-bottom: none;
+}
+
+.installment-calculator-page .stat-item label {
+    font-weight: bold;
+    color: #666;
+}
+
+.installment-calculator-page .stat-item .value {
+    font-weight: bold;
+    color: #333;
+    direction: ltr;
+    text-align: left;
+}
+
+.installment-calculator-page .stat-item.highlight {
+    background: rgba(76, 175, 80, 0.1);
+    padding: 12px;
+    border-radius: 5px;
+    margin: 5px 0;
+    border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.installment-calculator-page .stat-item.highlight .value {
+    color: #2e7d32;
+    font-size: 1.1em;
+}
+
+.installment-calculator-page .stat-item .value.interest {
+    color: #f44336;
+}
+
+.installment-calculator-page .stat-item .value.total {
+    color: #2e7d32;
+    font-size: 1.2em;
+}
+
+/* جدول برنامه اقساط */
+.installment-calculator-page .schedule-table {
+    font-size: 0.95em;
+}
+
+.installment-calculator-page .schedule-table thead th {
+    background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+    color: white;
+    text-align: center;
+    border: none;
+    padding: 10px 8px;
+}
+
+.installment-calculator-page .schedule-table tbody td {
+    text-align: center;
+    padding: 8px;
+    border-color: #e0e0e0;
+}
+
+.installment-calculator-page .schedule-table tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+.installment-calculator-page .schedule-table tbody tr:hover {
+    background-color: #e3f2fd;
+    transition: background-color 0.3s ease;
+}
+
+/* دکمه‌ها */
+.installment-calculator-page .btn {
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-weight: bold;
+    transition: all 0.3s ease;
+}
+
+.installment-calculator-page .btn-primary {
+    background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+    border: none;
+}
+
+.installment-calculator-page .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
+}
+
+.installment-calculator-page .btn-success {
+    background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
+    border: none;
+}
+
+.installment-calculator-page .btn-danger {
+    background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+    border: none;
+}
+
+/* Loading states */
+.installment-calculator-page .summary-loading,
+.installment-calculator-page .schedule-loading {
+    padding: 40px 20px;
+    color: #666;
+    text-align: center;
+}
+
+.installment-calculator-page .summary-loading i,
+.installment-calculator-page .schedule-loading i {
+    font-size: 2em;
+    margin-bottom: 10px;
+    color: #ccc;
+}
+
+/* انیمیشن‌ها */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.installment-calculator-page .card {
+    animation: fadeIn 0.5s ease-out;
+}
+
+.installment-calculator-page .stat-item {
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .installment-calculator-page .card-body {
+        padding: 15px;
+    }
+    
+    .installment-calculator-page #items-table {
+        font-size: 0.9em;
+    }
+    
+    .installment-calculator-page .stat-item {
+        flex-direction: column;
+        align-items: flex-start;
+        text-align: right;
+    }
+    
+    .installment-calculator-page .stat-item .value {
+        margin-top: 5px;
+        text-align: right;
+        direction: rtl;
+    }
+    
+    .installment-calculator-page .schedule-table {
+        font-size: 0.85em;
+    }
+}
+
+/* Print Styles */
+@media print {
+    .installment-calculator-page .card-header {
+        background: #333 !important;
+        -webkit-print-color-adjust: exact;
+        color-adjust: exact;
+    }
+    
+    .installment-calculator-page .btn {
+        display: none;
+    }
+    
+    .installment-calculator-page .card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    
+    .installment-calculator-page .schedule-table thead th {
+        background: #666 !important;
+        -webkit-print-color-adjust: exact;
+        color-adjust: exact;
+    }
+}
+
+/* اضافات سفارشی برای بهبود UX */
+.installment-calculator-page .form-control.is-invalid {
+    border-color: #dc3545;
+}
+
+.installment-calculator-page .form-control.is-valid {
+    border-color: #28a745;
+}
+
+.installment-calculator-page .tooltip-inner {
+    background-color: #333;
+    font-size: 0.9em;
+}
+
+.installment-calculator-page .alert {
+    border-radius: 8px;
+    border: none;
+    margin: 15px 0;
+}
+
+.installment-calculator-page .alert-success {
+    background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+    color: #155724;
+}
+
+.installment-calculator-page .alert-warning {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    color: #856404;
+}
+
+.installment-calculator-page .alert-danger {
+    background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+    color: #721c24;
+}
+
+/* استایل‌های ویژه برای اعداد فارسی */
+.installment-calculator-page .persian-number {
+    font-family: 'IRANSans', 'Tahoma', Arial;
+    direction: ltr;
+    text-align: left;
+}
+
+.installment-calculator-page .currency-display {
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    color: #2e7d32;
+    direction: ltr;
+    text-align: left;
+}
+
+/* آیکن‌های سفارشی */
+.installment-calculator-page .fa-calculator::before {
+    content: "🧮";
+}
+
+.installment-calculator-page .fa-credit-card::before {
+    content: "💳";
+}
+
+.installment-calculator-page .fa-bar-chart::before {
+    content: "📊";
+}
+
+.installment-calculator-page .fa-calendar::before {
+    content: "📅";
+}
+
+
+/* Print Format برای محاسبه اقساط */
+/* installment_calculator/installment_calculator/print_format/installment_calculation_print/installment_calculation_print.html */
+
+.print-format.installment-calculation-print {
+    font-family: 'Tahoma', Arial, sans-serif;
+    direction: rtl;
+    margin: 20px;
+}
+
+.print-format.installment-calculation-print .header {
+    text-align: center;
+    border-bottom: 2px solid #333;
+    padding-bottom: 20px;
+    margin-bottom: 30px;
+}
+
+.print-format.installment-calculation-print .company-info {
+    margin-bottom: 20px;
+}
+
+.print-format.installment-calculation-print .calculation-details {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 30px;
+}
+
+.print-format.installment-calculation-print .items-section {
+    margin-bottom: 30px;
+}
+
+.print-format.installment-calculation-print .items-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+}
+
+.print-format.installment-calculation-print .items-table th,
+.print-format.installment-calculation-print .items-table td {
+    border: 1px solid #333;
+    padding: 8px;
+    text-align: center;
+}
+
+.print-format.installment-calculation-print .items-table th {
+    background-color: #f0f0f0;
+    font-weight: bold;
+}
+
+.print-format.installment-calculation-print .summary-section {
+    display: flex;
+    justify-content: space-between;
+    margin: 30px 0;
+}
+
+.print-format.installment-calculation-print .payment-summary,
+.print-format.installment-calculation-print .installment-summary {
+    width: 48%;
+    border: 1px solid #333;
+    padding: 15px;
+}
+
+.print-format.installment-calculation-print .schedule-section {
+    margin-top: 30px;
+}
+
+.print-format.installment-calculation-print .schedule-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.print-format.installment-calculation-print .schedule-table th,
+.print-format.installment-calculation-print .schedule-table td {
+    border: 1px solid #333;
+    padding: 8px;
+    text-align: center;
+}
+
+.print-format.installment-calculation-print .schedule-table th {
+    background-color: #f0f0f0;
+    font-weight: bold;
+}
+
+.print-format.installment-calculation-print .footer {
+    margin-top: 50px;
+    text-align: center;
+    font-size: 0.9em;
+    color: #666;
+}
+
+.print-format.installment-calculation-print .signature-section {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 80px;
+}
+
+.print-format.installment-calculation-print .signature-box {
+    width: 200px;
+    border-top: 1px solid #333;
+    text-align: center;
+    padding-top: 10px;
+}
+
+/* استایل‌های مخصوص چاپ */
+@page {
+    margin: 2cm;
+    size: A4;
+}
+
+@media print {
+    .print-format.installment-calculation-print {
+        margin: 0;
+    }
+    
+    .print-format.installment-calculation-print .items-table th,
+    .print-format.installment-calculation-print .schedule-table th {
+        background-color: #e0e0e0 !important;
+        -webkit-print-color-adjust: exact;
+        color-adjust: exact;
+    }
+}

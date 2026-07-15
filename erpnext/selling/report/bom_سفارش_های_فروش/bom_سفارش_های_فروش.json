@@ -1,0 +1,41 @@
+{
+ "add_total_row": 0,
+ "add_translate_data": 0,
+ "columns": [],
+ "creation": "2025-09-01 09:47:24.718881",
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [],
+ "idx": 0,
+ "is_standard": "Yes",
+ "letter_head": "\u0637\u0631\u062d \u062c\u062f\u06cc\u062f",
+ "letterhead": null,
+ "modified": "2025-09-01 09:47:24.718881",
+ "modified_by": "Administrator",
+ "module": "Selling",
+ "name": "BOM \u0633\u0641\u0627\u0631\u0634 \u0647\u0627\u06cc \u0641\u0631\u0648\u0634",
+ "owner": "Administrator",
+ "prepared_report": 0,
+ "ref_doctype": "Sales Order",
+ "report_name": "BOM \u0633\u0641\u0627\u0631\u0634 \u0647\u0627\u06cc \u0641\u0631\u0648\u0634",
+ "report_type": "Script Report",
+ "roles": [
+  {
+   "role": "Maintenance User"
+  },
+  {
+   "role": "Accounts User"
+  },
+  {
+   "role": "Stock User"
+  },
+  {
+   "role": "Sales User"
+  },
+  {
+   "role": "Sales Manager"
+  }
+ ],
+ "timeout": 0
+}

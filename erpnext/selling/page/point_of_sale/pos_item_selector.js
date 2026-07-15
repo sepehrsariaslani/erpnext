@@ -1,4 +1,9 @@
-import onScan from "onscan.js";
+const onScan =
+	window.onScan ||
+	({
+		attachTo: () => {},
+		_getNormalizedKeyNum: (event) => event.which || event.keyCode || 0,
+	});
 
 erpnext.PointOfSale.ItemSelector = class {
 	// eslint-disable-next-line no-unused-vars

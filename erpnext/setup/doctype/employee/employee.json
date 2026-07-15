@@ -394,6 +394,7 @@
    "fieldname": "holiday_list",
    "fieldtype": "Link",
    "ignore_user_permissions": 1,
+   "in_list_view": 1,
    "label": "Holiday List",
    "oldfieldname": "holiday_list",
    "oldfieldtype": "Link",

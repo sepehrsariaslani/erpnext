@@ -4,6 +4,8 @@
 frappe.provide("erpnext.accounts");
 frappe.provide("erpnext.journal_entry");
 
+const MEMO_STYLE_CLASS = "memo-account-highlight";
+
 frappe.ui.form.on("Journal Entry", {
 	setup: function (frm) {
 		frm.add_fetch("bank_account", "account", "account");
@@ -125,6 +127,7 @@ frappe.ui.form.on("Journal Entry", {
 		}
 
 		erpnext.accounts.unreconcile_payment.add_unreconcile_btn(frm);
+		erpnext.journal_entry.render_memorandum_account_hints(frm);
 
 		if (frm.doc.voucher_type !== "Exchange Gain Or Loss") {
 			$.each(frm.doc.accounts || [], function (i, row) {
@@ -502,6 +505,8 @@ frappe.ui.form.on("Journal Entry Account", {
 
 	account: function (frm, dt, dn) {
 		erpnext.journal_entry.set_account_details(frm, dt, dn);
+		erpnext.journal_entry.suggest_mirror_account_row(frm, dt, dn);
+		erpnext.journal_entry.render_memorandum_account_hints(frm);
 	},
 
 	debit_in_account_currency: function (frm, cdt, cdn) {
@@ -514,10 +519,12 @@ frappe.ui.form.on("Journal Entry Account", {
 
 	debit: function (frm, dt, dn) {
 		frm.cscript.update_totals(frm.doc);
+		erpnext.journal_entry.render_memorandum_account_hints(frm);
 	},
 
 	credit: function (frm, dt, dn) {
 		frm.cscript.update_totals(frm.doc);
+		erpnext.journal_entry.render_memorandum_account_hints(frm);
 	},
 
 	exchange_rate: function (frm, cdt, cdn) {
@@ -534,9 +541,93 @@ frappe.ui.form.on("Journal Entry Account", {
 
 frappe.ui.form.on("Journal Entry Account", "accounts_remove", function (frm) {
 	frm.cscript.update_totals(frm.doc);
+	erpnext.journal_entry.render_memorandum_account_hints(frm);
 });
 
 $.extend(erpnext.journal_entry, {
+	ensure_memorandum_style: function () {
+		if (document.getElementById("memo-account-style")) return;
+		const styleTag = document.createElement("style");
+		styleTag.id = "memo-account-style";
+		styleTag.textContent = `
+			.grid-row.${MEMO_STYLE_CLASS} {
+				background: rgba(255, 189, 46, 0.08);
+			}
+		`;
+		document.head.appendChild(styleTag);
+	},
+
+	render_memorandum_account_hints: function (frm) {
+		const grid = frm.fields_dict.accounts && frm.fields_dict.accounts.grid;
+		if (!grid || !grid.grid_rows) return;
+
+		erpnext.journal_entry.ensure_memorandum_style();
+		const cache = frm.__memo_account_cache || {};
+
+		grid.grid_rows.forEach((gridRow) => {
+			const doc = gridRow.doc || {};
+			const rowElement = gridRow.row;
+			if (!rowElement) return;
+
+			if (cache[doc.account] && cache[doc.account].is_memorandum) {
+				rowElement.classList.add(MEMO_STYLE_CLASS);
+			} else {
+				rowElement.classList.remove(MEMO_STYLE_CLASS);
+			}
+		});
+	},
+
+	suggest_mirror_account_row: function (frm, dt, dn) {
+		const row = locals[dt][dn];
+		if (!row || !row.account || !frm.doc.company) return;
+		if (!frm.doc.__islocal && frm.doc.docstatus !== 0) return;
+
+		frappe.db
+			.get_value("Account", row.account, ["is_memorandum", "memorandum_mirror_account"])
+			.then((res) => {
+				const payload = (res && res.message) || {};
+				frm.__memo_account_cache = frm.__memo_account_cache || {};
+				frm.__memo_account_cache[row.account] = payload;
+
+				if (!payload.is_memorandum || !payload.memorandum_mirror_account) return;
+
+				const hasMirrorAlready = (frm.doc.accounts || []).some((item) => {
+					if (item.name === row.name) return false;
+					return item.account === payload.memorandum_mirror_account;
+				});
+				if (hasMirrorAlready) return;
+
+				const amount = flt(row.debit_in_account_currency || row.credit_in_account_currency || 0);
+				if (!amount) return;
+
+				const mirrorRow = frm.fields_dict.accounts.grid.add_new_row();
+				frappe.model.set_value(
+					mirrorRow.doctype,
+					mirrorRow.name,
+					"account",
+					payload.memorandum_mirror_account
+				);
+
+				if (flt(row.debit_in_account_currency) > 0) {
+					frappe.model.set_value(mirrorRow.doctype, mirrorRow.name, "credit_in_account_currency", amount);
+				} else if (flt(row.credit_in_account_currency) > 0) {
+					frappe.model.set_value(mirrorRow.doctype, mirrorRow.name, "debit_in_account_currency", amount);
+				}
+
+				frappe.show_alert(
+					{
+						message: __("Mirror memorandum account row was added automatically."),
+						indicator: "orange",
+					},
+					5
+				);
+				erpnext.journal_entry.render_memorandum_account_hints(frm);
+			})
+			.catch(() => {
+				/* ignore */
+			});
+	},
+
 	toggle_fields_based_on_currency: function (frm) {
 		var fields = ["currency_section", "account_currency", "exchange_rate", "debit", "credit"];
 

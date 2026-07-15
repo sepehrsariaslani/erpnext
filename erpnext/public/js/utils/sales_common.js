@@ -224,12 +224,41 @@ erpnext.sales_common = {
 				item.discount_percentage = 0.0;
 				this.apply_discount_on_item(doc, cdt, cdn, "discount_amount");
 			}
-
 			commission_rate() {
+				// اگر داریم کمیسیون محاسبه می‌کنیم، کاری نکن
+				if (this._calculating_commission) {
+					console.log("🔴 commission_rate() event blocked during calculation");
+					return;
+				}
+
+				console.log("🔵 commission_rate() event triggered");
 				this.calculate_commission();
 			}
 
+			// وقتی درصد تخفیف زیرکار تغییر میکنه، کمیسیون رو دوباره حساب کن
+			structure_disscount() {
+				if (this._calculating_commission) return;
+				console.log("🔵 structure_disscount() changed - recalculating commission");
+				this.calculate_commission();
+			}
+
+			// وقتی total_structure تغییر میکنه
+			total_structure() {
+				if (this._calculating_commission) return;
+				console.log("🔵 total_structure() changed - recalculating commission");
+				this.calculate_commission();
+			}
+
+
 			total_commission() {
+				// اگر داریم کمیسیون محاسبه می‌کنیم، کاری نکن
+				if (this._calculating_commission) {
+					console.log("🔴 total_commission() event blocked during calculation");
+					return;
+				}
+
+				console.log("🔵 total_commission() event triggered");
+
 				frappe.model.round_floats_in(this.frm.doc, [
 					"amount_eligible_for_commission",
 					"total_commission",
@@ -238,11 +267,13 @@ erpnext.sales_common = {
 				const { amount_eligible_for_commission } = this.frm.doc;
 				if (!amount_eligible_for_commission) return;
 
+				// فقط اگر total_commission دستی تغییر کرده باشه، commission_rate رو محاسبه کن
 				this.frm.set_value(
 					"commission_rate",
 					flt((this.frm.doc.total_commission * 100.0) / amount_eligible_for_commission)
 				);
 			}
+
 
 			allocated_percentage(doc, cdt, cdn) {
 				var sales_person = frappe.get_doc(cdt, cdn);
@@ -254,7 +285,7 @@ erpnext.sales_common = {
 
 					sales_person.allocated_amount = flt(
 						(this.frm.doc.amount_eligible_for_commission * sales_person.allocated_percentage) /
-							100.0,
+						100.0,
 						precision("allocated_amount", sales_person)
 					);
 					refresh_field(["allocated_amount"], sales_person);
@@ -325,52 +356,166 @@ erpnext.sales_common = {
 				}
 			}
 
+			// جایگزین تابع calculate_commission
 			calculate_commission() {
-				if (!this.frm.fields_dict.commission_rate || this.frm.doc.docstatus === 1) return;
+				if (!this.frm.fields_dict.commission_rate) return;
 
-				if (this.frm.doc.commission_rate > 100) {
-					this.frm.set_value("commission_rate", 100);
+				// گرد کردن اعداد
+				frappe.model.round_floats_in(this.frm.doc, ["amount_eligible_for_commission", "commission_rate"]);
+
+				// کنترل بازه مجاز برای نرخ کمیسیون
+				if (!(0 <= flt(this.frm.doc.commission_rate) && flt(this.frm.doc.commission_rate) <= 100.0)) {
 					frappe.throw(
-						`${__(
-							frappe.meta.get_label(this.frm.doc.doctype, "commission_rate", this.frm.doc.name)
-						)} ${__("cannot be greater than 100")}`
+						`${frappe.meta.get_label(this.frm.doc.doctype, "commission_rate")} ${__("must be between 0 and 100")}`
 					);
 				}
 
-				this.frm.doc.amount_eligible_for_commission = this.frm.doc.items.reduce(
-					(sum, item) => (item.grant_commission ? sum + item.base_net_amount : sum),
-					0
-				);
+				// محاسبه مجموع مبلغ آیتم‌هایی که اجازه پورسانت دارند
+				this.frm.doc.amount_eligible_for_commission = flt(this.frm.doc.total_structure || 0);
+				this.frm.doc.total_commission = 0.0;
+				console.log(`Amount eligible for commission: ${this.frm.doc.amount_eligible_for_commission}`);
 
-				this.frm.doc.total_commission = flt(
-					(this.frm.doc.amount_eligible_for_commission * this.frm.doc.commission_rate) / 100.0,
-					precision("total_commission")
-				);
 
-				refresh_field(["amount_eligible_for_commission", "total_commission"]);
+				// نمایش فیلد
+				refresh_field("amount_eligible_for_commission");
+
+				// سپس سهم‌ها و مشوق‌ها رو محاسبه کن
+				this.calculate_contribution();
 			}
+
 
 			calculate_contribution() {
 				var me = this;
-				$.each(this.frm.doc.doctype.sales_team || [], function (i, sales_person) {
+
+				// بررسی وجود فیلد sales_team
+				if (!me.frm.fields_dict.sales_team) return;
+
+				// فقط وقتی فرم Draft است اجرا شود
+				if (me.frm.doc.docstatus !== 0) return;
+
+				// Flag برای جلوگیری از cycle
+				if (me._calculating_commission) {
+					console.log("🔴 Commission calculation cycle prevented!");
+					return;
+				}
+				me._calculating_commission = true;
+
+				console.log("🔵 calculate_contribution() START");
+				console.log("Current total_commission:", me.frm.doc.total_commission);
+
+				// باقی کد...
+				var total_allocated_percentage = 0.0;
+				var sales_team = me.frm.doc.sales_team || [];
+				me.validate_sales_team();
+
+				var structure_discount = flt(me.frm.doc.structure_disscount || 0);
+				var base_amount = flt(me.frm.doc.amount_eligible_for_commission || 0);
+				console.log(`Structure discount: ${structure_discount}%`);
+				console.log(`Base amount for commission: ${base_amount}`);
+				var total_commission_calculated = 0.0;
+
+				$.each(sales_team, function (i, sales_person) {
 					frappe.model.round_floats_in(sales_person);
-					if (!sales_person.allocated_percentage) return;
+
+					var individual_commission_rate = flt(sales_person.commission_rate || 0);
+					var effective_commission_rate = Math.max(individual_commission_rate - structure_discount, 0);
+					var allocated_percentage = flt(sales_person.allocated_percentage || 0);
 
 					sales_person.allocated_amount = flt(
-						(me.frm.doc.amount_eligible_for_commission * sales_person.allocated_percentage) /
-							100.0,
+						base_amount * allocated_percentage / 100.0,
 						precision("allocated_amount", sales_person)
 					);
+
+					if (effective_commission_rate > 0) {
+						sales_person.incentives = flt(
+							base_amount * effective_commission_rate / 100.0 * allocated_percentage / 100.0,
+							precision("incentives", sales_person)
+						);
+					} else {
+						sales_person.incentives = 0.0;
+					}
+
+					total_allocated_percentage += allocated_percentage;
+					total_commission_calculated += flt(sales_person.incentives || 0);
+					// لاگ تفصیلی برای هر فروشنده
+					console.log(`
+				Sales Person: ${sales_person.sales_person}
+				- Individual Commission Rate: ${individual_commission_rate}%
+				- Structure Discount: ${structure_discount}%
+				- Effective Rate: ${effective_commission_rate}%
+				- Allocated Percentage: ${allocated_percentage}%
+				- Allocated Amount: ${sales_person.allocated_amount.toLocaleString()}
+				- Final Incentives: ${sales_person.incentives.toLocaleString()}
+				`);
+
+					refresh_field(["allocated_amount", "incentives"], sales_person.name, sales_person.parentfield);
 				});
+
+				// اعتبارسنجی درصدها
+				if (sales_team.length > 0 && Math.abs(total_allocated_percentage - 100.0) > 0.01) {
+					me._calculating_commission = false; // reset flag قبل از throw
+					frappe.throw(__(`Total allocated percentage for sales team should be 100%. Current total: ${total_allocated_percentage}%`));
+				}
+
+				// تنظیم total_commission بدون trigger کردن event
+				me.frm.doc.total_commission = flt(total_commission_calculated, precision("total_commission"));
+
+				console.log("Final total_commission:", me.frm.doc.total_commission);
+				console.log(`Total Commission Calculated: ${me.frm.doc.total_commission.toLocaleString()}`);
+
+
+				// فقط refresh کن، set_value نکن
+				refresh_field("total_commission");
+
+				// reset flag
+				me._calculating_commission = false;
+				console.log("🔵 calculate_contribution() END");
 			}
 
+
+			// جایگزین تابع calculate_incentive (برای فراخوانی جداگانه در صورت نیاز)
 			calculate_incentive(row) {
-				if (row.allocated_amount) {
+				var structure_discount = flt(this.frm.doc.structure_disscount || 0);
+				var base_amount = flt(this.frm.doc.amount_eligible_for_commission || 0);
+				var allocated_percentage = flt(row.allocated_percentage || 0);
+
+				// محاسبه مبلغ تخصیصی
+				row.allocated_amount = flt(
+					base_amount * allocated_percentage / 100.0,
+					precision("allocated_amount", row)
+				);
+
+				// محاسبه مشوق
+				var individual_rate = flt(row.commission_rate || 0);
+				var effective_rate = Math.max(individual_rate - structure_discount, 0);
+
+				if (effective_rate > 0) {
 					row.incentives = flt(
-						(row.allocated_amount * row.commission_rate) / 100.0,
+						base_amount * effective_rate / 100.0 * allocated_percentage / 100.0,
 						precision("incentives", row)
 					);
+				} else {
+					row.incentives = 0.0;
 				}
+
+				// محاسبه مجدد total_commission
+				this.calculate_contribution();
+			}
+
+			validate_sales_team() {
+				var sales_team = this.frm.doc.sales_team || [];
+
+				$.each(sales_team, function (i, sales_person) {
+					// بررسی نرخ کمیسیون
+					if (!(0 <= flt(sales_person.commission_rate || 0) && flt(sales_person.commission_rate || 0) <= 100)) {
+						frappe.throw(__(`Commission rate for ${sales_person.sales_person} must be between 0 and 100%`));
+					}
+
+					// بررسی درصد تخصیص
+					if (!(0 <= flt(sales_person.allocated_percentage || 0) && flt(sales_person.allocated_percentage || 0) <= 100)) {
+						frappe.throw(__(`Allocated percentage for ${sales_person.sales_person} must be between 0 and 100%`));
+					}
+				});
 			}
 
 			set_dynamic_labels() {

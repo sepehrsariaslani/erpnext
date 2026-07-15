@@ -1,35 +1,220 @@
+{%- macro to_persian_digits(value) -%}
+	{%- if value is none -%}
+		{{ "" }}
+	{%- else -%}
+		{{ value|string
+			|replace("0","۰")
+			|replace("1","۱")
+			|replace("2","۲")
+			|replace("3","۳")
+			|replace("4","۴")
+			|replace("5","۵")
+			|replace("6","۶")
+			|replace("7","۷")
+			|replace("8","۸")
+			|replace("9","۹")
+		}}
+	{%- endif -%}
+{%- endmacro -%}
+
+{%- macro format_number(value) -%}
+	{%- if value is none or value == "" -%}
+		{{ "" }}
+	{%- else -%}
+		{%- set num = frappe.utils.flt(value) -%}
+		{%- set formatted = "{:,.0f}".format(num).replace(",", ".") -%}
+		{{ to_persian_digits(formatted) }}
+	{%- endif -%}
+{%- endmacro -%}
+
+{%- macro format_in_words(value) -%}
+	{%- if not value -%}
+		{{ "" }}
+	{%- else -%}
+		{%- set text = value|string
+			|replace("IRR", "")
+			|replace("irr", "")
+			|replace("فقط", "")
+			|replace("ریال", "")
+			|replace("ريال", "")
+			|replace(".", "")
+			|replace(",", "")
+			|trim
+		-%}
+
+		{%- if text -%}
+			{{ text }} ریال
+		{%- endif -%}
+	{%- endif -%}
+{%- endmacro -%}
+
+{%- macro jalali_date(date_value) -%}
+	{%- if not date_value -%}
+		{{ "" }}
+	{%- else -%}
+		{%- set g = frappe.utils.getdate(date_value) -%}
+		{%- set gy = g.year -%}
+		{%- set gm = g.month -%}
+		{%- set gd = g.day -%}
+
+		{%- set gdm = [0,31,59,90,120,151,181,212,243,273,304,334] -%}
+		{%- set gy2 = gy + 1 if gm > 2 else gy -%}
+		{%- set days = 355666 + (365 * gy) + ((gy2 + 3) // 4) - ((gy2 + 99) // 100) + ((gy2 + 399) // 400) + gd + gdm[gm - 1] -%}
+
+		{%- set jy = -1595 + (33 * (days // 12053)) -%}
+		{%- set days = days % 12053 -%}
+
+		{%- set jy = jy + (4 * (days // 1461)) -%}
+		{%- set days = days % 1461 -%}
+
+		{%- if days > 365 -%}
+			{%- set jy = jy + ((days - 1) // 365) -%}
+			{%- set days = (days - 1) % 365 -%}
+		{%- endif -%}
+
+		{%- if days < 186 -%}
+			{%- set jm = 1 + (days // 31) -%}
+			{%- set jd = 1 + (days % 31) -%}
+		{%- else -%}
+			{%- set jm = 7 + ((days - 186) // 30) -%}
+			{%- set jd = 1 + ((days - 186) % 30) -%}
+		{%- endif -%}
+
+		{%- set jm_str = "0" ~ jm if jm < 10 else jm|string -%}
+		{%- set jd_str = "0" ~ jd if jd < 10 else jd|string -%}
+
+		{{ to_persian_digits(jy ~ "/" ~ jm_str ~ "/" ~ jd_str) }}
+	{%- endif -%}
+{%- endmacro -%}
+
+{%- macro payment_status_fa(status) -%}
+	{%- if not status -%}
+		{{ "" }}
+	{%- elif status == "Paid" -%}
+		پرداخت شده
+	{%- elif status == "Unpaid" -%}
+		پرداخت نشده
+	{%- elif status == "Overdue" -%}
+		سررسید گذشته
+	{%- elif status == "Partly Paid" -%}
+		بخشی پرداخت شده
+	{%- elif status == "Draft" -%}
+		پیش‌نویس
+	{%- elif status == "Cancelled" -%}
+		لغو شده
+	{%- else -%}
+		{{ status }}
+	{%- endif -%}
+{%- endmacro -%}
+
 {%- macro add_header(page_num, max_pages, doc, letter_head, no_letterhead, footer, print_settings=None, print_heading_template=None) -%}
 	{% if letter_head and not no_letterhead %}
 		<div class="letter-head">{{ letter_head }}</div>
 	{% endif %}
 	{% if print_heading_template %}
 		{{ frappe.render_template(print_heading_template, {"doc":doc}) }}
-	{% else %}
 	{% endif %}
-	{%- if doc.meta.is_submittable and doc.docstatus==2-%}
+	{%- if doc.meta.is_submittable and doc.docstatus == 2 -%}
 	<div class="text-center" document-status="cancelled">
-		<h4 style="margin: 0px;">{{ _("CANCELLED") }}</h4>
+		<h4 style="margin: 0;">لغو شده</h4>
 	</div>
 	{%- endif -%}
 {%- endmacro -%}
+
 {% for page in layout %}
-<div class="page-break">
+<div class="page-break print-format" dir="rtl">
+
 	<div {% if print_settings.repeat_header_footer %} id="header-html" class="hidden-pdf" {% endif %}>
 		{{ add_header(loop.index, layout|len, doc, letter_head, no_letterhead, footer, print_settings) }}
 	</div>
+
 	<style>
-		.taxes-section .order-taxes.mt-5{
-			margin-top: 0px !important;
-		}
-		.taxes-section .order-taxes .border-btm.pb-5{
-			padding-bottom: 0px !important;
-		}
-		.print-format label{
-			color: #74808b;
-			font-size: 12px;
-			margin-bottom: 4px;
+		body, .print-format, .page-break {
+			direction: rtl;
+			text-align: right;
+			font-family: Tahoma, Arial, sans-serif;
+			font-size: 13px;
+			color: #222;
 		}
 
+		.taxes-section .order-taxes.mt-5 {
+			margin-top: 0 !important;
+		}
+
+		.taxes-section .order-taxes .border-btm.pb-5 {
+			padding-bottom: 0 !important;
+		}
+
+		.print-format label {
+			color: #666;
+			font-size: 12px;
+			margin-bottom: 4px;
+			font-weight: bold;
+		}
+
+		.table {
+			width: 100%;
+			border-collapse: collapse;
+		}
+
+		.table-bordered th,
+		.table-bordered td {
+			border: 1px solid #dcdcdc;
+			padding: 7px 8px;
+			vertical-align: top;
+		}
+
+		.table-bordered th {
+			background: #f5f5f5;
+		}
+
+		.text-center {
+			text-align: center !important;
+		}
+
+		.text-right {
+			text-align: right !important;
+		}
+
+		.text-left {
+			text-align: left !important;
+		}
+
+		.section-box {
+			margin-bottom: 15px;
+		}
+
+		.words-box {
+			margin-top: 6px;
+			padding: 10px;
+			border: 1px solid #ddd;
+			background: #f8f8f8;
+			line-height: 1.9;
+			min-height: 48px;
+		}
+
+		.totals-box {
+			margin-top: 10px;
+			border: 1px solid #ddd;
+			padding: 8px 10px;
+		}
+
+		.totals-row {
+			display: flex;
+			justify-content: space-between;
+			padding: 4px 0;
+			border-bottom: 1px solid #eee;
+		}
+
+		.totals-row:last-child {
+			border-bottom: none;
+			font-weight: bold;
+		}
+
+		.small-muted {
+			color: #666;
+			font-size: 12px;
+		}
 	</style>
 
 	{% if print_settings.repeat_header_footer %}
@@ -40,122 +225,164 @@
 		</div>
 		{% endif %}
 		<p class="text-center small page-number visible-pdf">
-			{{ _("Page {0} of {1}").format('<span class="page"></span>', '<span class="topage"></span>') }}
+			صفحه <span class="page"></span> از <span class="topage"></span>
 		</p>
+	</div>
+	{% endif %}
+
+	{% if doc.meta.is_submittable and doc.docstatus == 0 and (print_settings == None or print_settings.add_draft_heading) %}
+	<div class="text-center">
+		<h4 style="margin: 0 0 10px 0;">پیش‌نویس</h4>
 	</div>
 	{% endif %}
 
 	<div class="row section-break" style="margin-bottom: 10px;">
 		<div class="col-xs-6 p-0">
-			<div class="col-xs-12 value text-uppercase"><b>{{ doc.customer }}</b></div>
-			<div class="col-xs-12">
-				{{ doc.address_display }}
+			<div class="col-xs-12"><label>نام مشتری</label></div>
+			<div class="col-xs-12 value"><b>{{ doc.customer or "" }}</b></div>
+
+			<div class="col-xs-12" style="margin-top: 8px;">
+				<label>آدرس</label><br>
+				{{ doc.address_display or "" }}
 			</div>
-			<div class="col-xs-12">
-				{{ _("Contact: ")+doc.contact_display if doc.contact_display else '' }}
+
+			<div class="col-xs-12" style="margin-top: 8px;">
+				{{ "اطلاعات تماس: " + doc.contact_display if doc.contact_display else '' }}
 			</div>
-			<div class="col-xs-12">
-				{{ _("Mobile: ")+doc.contact_mobile if doc.contact_mobile else '' }}
+
+			<div class="col-xs-12" style="margin-top: 4px;">
+				{{ "موبایل: " + to_persian_digits(doc.contact_mobile) if doc.contact_mobile else '' }}
 			</div>
 		</div>
+
 		<div class="col-xs-3"></div>
+
 		<div class="col-xs-3" style="padding-left: 5px;">
-			<div>
-				<div><label>{{ _("Invoice ID") }}</label></div>
-				<div>{{ doc.name }}</div>
+			<div class="section-box">
+				<div><label>شماره فاکتور</label></div>
+				<div>{{ to_persian_digits(doc.name) }}</div>
 			</div>
-			<div style="margin-top: 20px;">
-				<div><label>{{ _("Invoice Date") }}</label></div>
-				<div>{{ frappe.utils.format_date(doc.posting_date) }}</div>
+
+			<div class="section-box" style="margin-top: 20px;">
+				<div><label>تاریخ فاکتور</label></div>
+				<div>{{ jalali_date(doc.posting_date) }}</div>
 			</div>
-			<div style="margin-top: 20px;">
-				<div><label>{{ _("Due Date") }}</label></div>
-				<div>{{ frappe.utils.format_date(doc.due_date) }}</div>
+
+			<div class="section-box" style="margin-top: 20px;">
+				<div><label>تاریخ سررسید</label></div>
+				<div>{{ jalali_date(doc.due_date) }}</div>
 			</div>
 		</div>
 	</div>
 
 	<div class="section-break">
-		<table class="table table-bordered table-condensed mb-0" style="width: 100%; border-collapse: collapse; font-size: 12px;">
+		<table class="table table-bordered table-condensed mb-0" style="font-size: 12px;">
 			<colgroup>
 				<col style="width: 5%">
-				<col style="width: 45%">
+				<col style="width: 20%">
+				<col style="width: 15%">
+				<col style="width: 25%">
 				<col style="width: 10%">
-				<col style="width: 20%">
-				<col style="width: 20%">
+				<col style="width: 12.5%">
+				<col style="width: 12.5%">
 			</colgroup>
 			<thead>
 				<tr>
-					<th class="text-uppercase" style="text-align:center">{{ _("Sr") }}</th>
-					<th class="text-uppercase" style="text-align:center">{{ _("Details") }}</th>
-					<th class="text-uppercase" style="text-align:center">{{ _("Qty") }}</th>
-					<th class="text-uppercase" style="text-align:right">{{ _("Rate") }}</th>
-					<th class="text-uppercase" style="text-align:right">{{ _("Amount") }}</th>
+					<th class="text-center">ردیف</th>
+					<th class="text-center">نام کالا</th>
+					<th class="text-center">کد کالا</th>
+					<th class="text-center">توضیحات</th>
+					<th class="text-center">تعداد</th>
+					<th class="text-right">نرخ</th>
+					<th class="text-right">مبلغ</th>
 				</tr>
 			</thead>
-			{% for item in doc.items %}
-			<tr>
-				<td style="text-align:center">{{ loop.index }}</td>
-				<td>
-					<b>{{ item.item_code }}: {{ item.item_name }}</b>
-					{% if (item.description != item.item_name) %}
-						<br>{{ item.description }}
-					{% endif %}
-				</td>
-				<td style="text-align: center;">
-					{{ item.get_formatted("qty", 0) }}
-					{{ item.get_formatted("uom", 0) }}
-				</td>
-				<td style="text-align: right;">{{ item.get_formatted("net_rate", doc) }}</td>
-				<td style="text-align: right;">{{ item.get_formatted("net_amount", doc) }}</td>
-			</tr>
-			{% endfor %}
-		</table>
-		<!-- total -->
-		<div class="row">
+			<tbody>
+				{% for item in doc.items %}
+				<tr>
+					<td class="text-center">{{ to_persian_digits(loop.index) }}</td>
 
+					<td>
+						{{ item.item_name or "" }}
+					</td>
+
+					<td class="text-center">
+						{{ to_persian_digits(item.item_code or "") }}
+					</td>
+
+					<td>
+						&nbsp;
+					</td>
+
+					<td class="text-center">
+						{{ format_number(item.qty or 0) }}
+						{{ item.uom or "" }}
+					</td>
+
+					<td class="text-right">
+						{{ format_number(item.net_rate or item.rate or 0) }}
+					</td>
+
+					<td class="text-right">
+						{{ format_number(item.net_amount or item.amount or 0) }}
+					</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+
+		<div class="row" style="margin-top: 15px;">
 			<div class="col-xs-6">
 				<div>
-					<label>{{ _("Amount in Words") }}</label>
-					{{ doc.in_words }}
+					<label>مبلغ به حروف</label>
+					<div class="words-box">
+						{{ format_in_words(doc.in_words) }}
+					</div>
 				</div>
+
 				<div style="margin-top: 20px;">
-					<label>{{ _("Payment Status") }}</label>
-					{{ doc.status }}
+					<label>وضعیت پرداخت</label>
+					<div>{{ payment_status_fa(doc.status) }}</div>
 				</div>
 			</div>
+
 			<div class="col-xs-6">
-				<div class="row section-break">
-					<div class="col-xs-7"><div>{{ _("Sub Total") }}</div></div>
-					<div class="col-xs-5" style="text-align: right;">{{ doc.get_formatted("net_total", doc) }}</div>
-				</div>
-				<div>
+				<div class="totals-box">
+					<div class="totals-row">
+						<div>جمع جزء</div>
+						<div class="text-left">{{ format_number(doc.net_total or 0) }}</div>
+					</div>
+
 					{% for d in doc.taxes %}
 						{% if d.tax_amount %}
-							<div class="row">
-								<div class="col-xs-8"><div>{{ _(d.description) }}</div></div>
-								<div class="col-xs-4" style="text-align: right;">{{ d.get_formatted("tax_amount") }}</div>
-							</div>
+						<div class="totals-row">
+							<div>{{ d.description or "" }}</div>
+							<div class="text-left">{{ format_number(d.tax_amount or 0) }}</div>
+						</div>
 						{% endif %}
 					{% endfor %}
-				</div>
-				<div class="row">
-					<div class="col-xs-7"><div>{{ _("Total") }}</div></div>
-					<div class="col-xs-5" style="text-align: right;">{{ doc.get_formatted("grand_total", doc) }}</div>
+
+					<div class="totals-row">
+						<div>جمع کل</div>
+						<div class="text-left">{{ format_number(doc.grand_total or 0) }}</div>
+					</div>
 				</div>
 			</div>
-
 		</div>
 	</div>
 
-
-	<div class="row">
+	<div class="row" style="margin-top: 20px;">
 		<div class="col-xs-12">
 			<div class="row important data-field">
-				<div class="col-xs-12"><label>{{ _("Terms and Conditions") }}: </label></div>
-				<div class="col-xs-12">{{ doc.terms if doc.terms else '' }}</div>
+				<div class="col-xs-12">
+					<label>شرایط و ضوابط:</label>
+				</div>
+				<div class="col-xs-12">
+					{{ doc.terms if doc.terms else '' }}
+				</div>
 			</div>
 		</div>
 	</div>
+
 </div>
 {% endfor %}

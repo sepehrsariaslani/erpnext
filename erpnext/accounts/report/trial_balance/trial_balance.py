@@ -20,6 +20,7 @@ from erpnext.accounts.report.financial_statements import (
 )
 from erpnext.accounts.report.utils import convert_to_presentation_currency, get_currency
 from erpnext.accounts.utils import get_zero_cutoff
+from erpnext.regional.iran.memorandum_accounts import has_memorandum_field
 
 value_fields = (
 	"opening_debit",
@@ -82,11 +83,15 @@ def validate_filters(filters):
 
 
 def get_data(filters):
-	accounts = frappe.db.sql(
-		"""select name, account_number, parent_account, account_name, root_type, report_type, is_group, lft, rgt
+	conditions = ["company=%s"]
+	if has_memorandum_field():
+		conditions.append("ifnull(is_memorandum, 0)=0")
 
-		from `tabAccount` where company=%s order by lft""",
-		filters.company,
+	accounts = frappe.db.sql(
+		f"""select name, account_number, parent_account, account_name, root_type, report_type, is_group, lft, rgt
+
+		from `tabAccount` where {' and '.join(conditions)} order by lft""",
+		(filters.company,),
 		as_dict=True,
 	)
 	company_currency = filters.presentation_currency or erpnext.get_company_currency(filters.company)
@@ -234,7 +239,10 @@ def get_opening_balance(
 	ignore_reporting_currency=True,
 ):
 	closing_balance = frappe.qb.DocType(doctype)
-	accounts = frappe.db.get_all("Account", filters={"report_type": report_type}, pluck="name")
+	account_filters = {"report_type": report_type, "company": filters.company}
+	if has_memorandum_field():
+		account_filters["is_memorandum"] = 0
+	accounts = frappe.db.get_all("Account", filters=account_filters, pluck="name")
 
 	opening_balance = (
 		frappe.qb.from_(closing_balance)

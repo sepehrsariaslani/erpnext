@@ -1,12 +1,17 @@
+const erpnext_utils = (window.erpnext && window.erpnext.utils) || {
+	get_tree_options: () => [],
+	get_tree_default: () => "All Companies",
+};
+
 frappe.treeview_settings["Employee"] = {
 	get_tree_nodes: "erpnext.setup.doctype.employee.employee.get_children",
 	filters: [
 		{
 			fieldname: "company",
 			fieldtype: "Select",
-			options: ["All Companies"].concat(erpnext.utils.get_tree_options("company")),
+			options: ["All Companies"].concat(erpnext_utils.get_tree_options("company")),
 			label: __("Company"),
-			default: erpnext.utils.get_tree_default("company"),
+			default: erpnext_utils.get_tree_default("company"),
 		},
 	],
 	breadcrumb: "Hr",

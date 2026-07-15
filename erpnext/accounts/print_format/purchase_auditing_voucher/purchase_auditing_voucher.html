@@ -1,105 +1,310 @@
 {%- from "templates/print_formats/standard_macros.html" import add_header -%}
-<div>
-    {% set gl = frappe.get_list(doctype="GL Entry",  fields=["account", "party_type", "party", "debit", "credit", "remarks"], filters={"voucher_type": doc.doctype, "voucher_no": doc.name}) %}
+
+{% macro to_persian_digits(value) -%}
+    {%- if value is none -%}
+        {{ "" }}
+    {%- else -%}
+        {{ value|string
+            |replace("0","۰")
+            |replace("1","۱")
+            |replace("2","۲")
+            |replace("3","۳")
+            |replace("4","۴")
+            |replace("5","۵")
+            |replace("6","۶")
+            |replace("7","۷")
+            |replace("8","۸")
+            |replace("9","۹")
+        }}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro format_number(value, precision=0) -%}
+    {%- if value is none or value == "" -%}
+        {{ "" }}
+    {%- else -%}
+        {%- set num = frappe.utils.flt(value) -%}
+        {%- if precision == 0 -%}
+            {%- set formatted = "{:,.0f}".format(num).replace(",", ".") -%}
+        {%- else -%}
+            {%- set formatted = ("{:,.%df}" % precision).format(num).replace(",", ".") -%}
+        {%- endif -%}
+        {{ to_persian_digits(formatted) }}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro jalali_date(date_value) -%}
+    {%- if not date_value -%}
+        {{ "" }}
+    {%- else -%}
+        {%- set g = frappe.utils.getdate(date_value) -%}
+        {%- set gy = g.year -%}
+        {%- set gm = g.month -%}
+        {%- set gd = g.day -%}
+
+        {%- set gdm = [0,31,59,90,120,151,181,212,243,273,304,334] -%}
+        {%- set gy2 = gy + 1 if gm > 2 else gy -%}
+        {%- set days = 355666 + (365 * gy) + ((gy2 + 3) // 4) - ((gy2 + 99) // 100) + ((gy2 + 399) // 400) + gd + gdm[gm - 1] -%}
+        {%- set jy = -1595 + (33 * (days // 12053)) -%}
+        {%- set days = days % 12053 -%}
+        {%- set jy = jy + (4 * (days // 1461)) -%}
+        {%- set days = days % 1461 -%}
+
+        {%- if days > 365 -%}
+            {%- set jy = jy + ((days - 1) // 365) -%}
+            {%- set days = (days - 1) % 365 -%}
+        {%- endif -%}
+
+        {%- if days < 186 -%}
+            {%- set jm = 1 + (days // 31) -%}
+            {%- set jd = 1 + (days % 31) -%}
+        {%- else -%}
+            {%- set jm = 7 + ((days - 186) // 30) -%}
+            {%- set jd = 1 + ((days - 186) % 30) -%}
+        {%- endif -%}
+
+        {%- set jm_str = "0" ~ jm if jm < 10 else jm|string -%}
+        {%- set jd_str = "0" ~ jd if jd < 10 else jd|string -%}
+        {{ to_persian_digits(jy ~ "/" ~ jm_str ~ "/" ~ jd_str) }}
+    {%- endif -%}
+{%- endmacro %}
+
+<div class="order-wrapper" style="direction: rtl; text-align: right;">
+    {% set gl = frappe.get_list(
+        doctype="GL Entry",
+        fields=["account", "party_type", "party", "debit", "credit", "remarks"],
+        filters={"voucher_type": doc.doctype, "voucher_no": doc.name}
+    ) %}
+
     {%- if not doc.get("print_heading") and not doc.get("select_print_heading")
-        and doc.set("select_print_heading", _("Purchase Invoice")) -%}{%- endif -%}
+        and doc.set("select_print_heading", _("فاکتور خرید")) -%}{%- endif -%}
+
     {{ add_header(0, 1, doc, letter_head, no_letterhead, print_settings) }}
+
+    <style>
+        .order-wrapper {
+            direction: rtl;
+            text-align: right;
+            font-family: Tahoma, Vazirmatn, "Noto Sans Arabic", sans-serif;
+            font-size: 12px;
+            color: #222;
+        }
+
+        .order-wrapper * {
+            direction: rtl;
+            text-align: right;
+            box-sizing: border-box;
+        }
+
+        .order-wrapper table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .order-wrapper th,
+        .order-wrapper td {
+            text-align: right !important;
+            vertical-align: middle;
+            padding: 6px 8px;
+        }
+
+        .order-wrapper .text-center {
+            text-align: center !important;
+        }
+
+        .order-wrapper .margin-top {
+            margin-top: 20px;
+        }
+
+        .order-wrapper .margin-bottom {
+            margin-bottom: 20px;
+        }
+
+        .order-wrapper .info-table td {
+            padding: 5px 0;
+            vertical-align: top;
+        }
+
+        .order-wrapper .table {
+            width: 100%;
+            border: 1px solid #dcdcdc;
+        }
+
+        .order-wrapper .table th {
+            background: #f5f5f5;
+            font-weight: bold;
+        }
+
+        .order-wrapper .table th,
+        .order-wrapper .table td {
+            border: 1px solid #dcdcdc;
+        }
+
+        .order-wrapper .summary-box {
+            border: 1px solid #dcdcdc;
+            padding: 10px;
+        }
+
+        .order-wrapper .label-cell {
+            width: 170px;
+            white-space: nowrap;
+            font-weight: bold;
+        }
+    </style>
+
     <div class="row margin-bottom">
         <div class="col-xs-6">
-            <table>
-            <tr><td><strong>Supplier Name: </strong></td><td>{{ doc.supplier }}</td></tr>
-            <tr><td><strong>Due Date: </strong></td><td>{{ frappe.utils.format_date(doc.due_date) }}</td></tr>
-            <tr><td><strong>Address: </strong></td><td>{{doc.address_display}}</td></tr>
-            <tr><td><strong>Contact: </strong></td><td>{{doc.contact_display}}</td></tr>
-            <tr><td><strong>Mobile no: </strong> </td><td>{{doc.contact_mobile}}</td></tr>
+            <table class="info-table">
+                <tr>
+                    <td class="label-cell"><strong>{{ _("نام تأمین‌کننده") }}:</strong></td>
+                    <td>{{ doc.supplier or "" }}</td>
+                </tr>
+                <tr>
+                    <td class="label-cell"><strong>{{ _("تاریخ سررسید") }}:</strong></td>
+                    <td>{{ jalali_date(doc.due_date) }}</td>
+                </tr>
+                <tr>
+                    <td class="label-cell"><strong>{{ _("آدرس") }}:</strong></td>
+                    <td>{{ doc.address_display or "" }}</td>
+                </tr>
+                <tr>
+                    <td class="label-cell"><strong>{{ _("اطلاعات تماس") }}:</strong></td>
+                    <td>{{ doc.contact_display or "" }}</td>
+                </tr>
+                <tr>
+                    <td class="label-cell"><strong>{{ _("شماره موبایل") }}:</strong></td>
+                    <td>{{ to_persian_digits(doc.contact_mobile or "") }}</td>
+                </tr>
             </table>
         </div>
+
         <div class="col-xs-6">
-            <table>
-                <tr><td><strong>Voucher No: </strong></td><td>{{ doc.name }}</td></tr>
-                <tr><td><strong>Date: </strong></td><td>{{ frappe.utils.format_date(doc.creation) }}</td></tr>
+            <table class="info-table">
+                <tr>
+                    <td class="label-cell"><strong>{{ _("شماره سند") }}:</strong></td>
+                    <td>{{ to_persian_digits(doc.name or "") }}</td>
+                </tr>
+                <tr>
+                    <td class="label-cell"><strong>{{ _("تاریخ") }}:</strong></td>
+                    <td>{{ jalali_date(doc.creation) }}</td>
+                </tr>
             </table>
         </div>
     </div>
+
     <div class="margin-top margin-bottom">
         <table class="table table-bordered table-condensed">
             <tr>
-                <th>SL</th>
-                <th>Item Code</th>
-                <th>Item Name</th>
-                <th>UOM</th>
-                <th>Received Qty.</th>
-                <th>Rejected Qty</th>
-                <th>Qty</th>
-                <th>Basic Rate</th>
-                <th>Amount</th>
+                <th class="text-center" style="width: 50px;">{{ _("ردیف") }}</th>
+                <th>{{ _("کد کالا") }}</th>
+                <th>{{ _("نام کالا") }}</th>
+                <th>{{ _("واحد") }}</th>
+                <th>{{ _("تعداد دریافتی") }}</th>
+                <th>{{ _("تعداد مرجوعی") }}</th>
+                <th>{{ _("تعداد") }}</th>
+                <th>{{ _("نرخ پایه") }}</th>
+                <th>{{ _("مبلغ") }}</th>
             </tr>
             {% for item in doc.items %}
             <tr>
-                <td>{{ loop.index }}</td>
-                <td>{{ item.item_code }}</td>
-                <td>{{ item.item_name }}</td>
-                <td>{{ item.uom }}</td>
-                <td>{{ item.received_qty }}</td>
-                <td>{{ item.rejected_qty }}</td>
-                <td>{{ item.qty}}</td>
-                <td>{{ item.rate }}</td>
-                <td>{{ item.amount }}</td>
+                <td class="text-center">{{ to_persian_digits(loop.index) }}</td>
+                <td>{{ to_persian_digits(item.item_code or "") }}</td>
+                <td>{{ item.item_name or "" }}</td>
+                <td>{{ item.uom or "" }}</td>
+                <td>{{ format_number(item.received_qty or 0, 0) }}</td>
+                <td>{{ format_number(item.rejected_qty or 0, 0) }}</td>
+                <td>{{ format_number(item.qty or 0, 0) }}</td>
+                <td>{{ format_number(item.rate or 0, 0) }}</td>
+                <td>{{ format_number(item.amount or 0, 0) }}</td>
             </tr>
             {% endfor %}
         </table>
     </div>
+
     <div class="row margin-bottom">
         <div class="col-xs-6">
-            <table>
-            <tr><td><strong>Total Quantity: </strong></td><td>{{ doc.total_qty }}</td></tr>
-            <tr><td><strong>Total: </strong></td><td>{{doc.total}}</td></tr>
-            <tr><td><strong>Net Weight: </strong></td><td>{{ doc.total_net_weight }}</td></tr>
-        </table>
-    </div>
-    <div class="col-xs-6">
-        <table>
-                <tr><td><strong>Tax and Charges: </strong></td><td>{{doc.taxes_and_charges}}</td></tr>
+            <table class="info-table summary-box">
+                <tr>
+                    <td class="label-cell"><strong>{{ _("جمع کل تعداد") }}:</strong></td>
+                    <td>{{ format_number(doc.total_qty or 0, 0) }}</td>
+                </tr>
+                <tr>
+                    <td class="label-cell"><strong>{{ _("جمع") }}:</strong></td>
+                    <td>{{ format_number(doc.total or 0, 0) }}</td>
+                </tr>
+                <tr>
+                    <td class="label-cell"><strong>{{ _("وزن خالص") }}:</strong></td>
+                    <td>{{ format_number(doc.total_net_weight or 0, 0) }}</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="col-xs-6">
+            <table class="info-table summary-box">
+                <tr>
+                    <td class="label-cell"><strong>{{ _("مالیات و عوارض") }}:</strong></td>
+                    <td>{{ doc.taxes_and_charges or "" }}</td>
+                </tr>
+
                 {% for tax in doc.taxes %}
-                {% if tax.tax_amount_after_discount_amount!= 0 %}
-                    <tr><td><strong>{{ tax.account_head }}: </strong></td><td>{{ tax.tax_amount_after_discount_amount }}</td></tr>
+                {% if tax.tax_amount_after_discount_amount != 0 %}
+                <tr>
+                    <td class="label-cell"><strong>{{ tax.account_head }}:</strong></td>
+                    <td>{{ format_number(tax.tax_amount_after_discount_amount or 0, 0) }}</td>
+                </tr>
                 {% endif %}
                 {% endfor %}
-                {% if doc.taxes_and_charges_added!= 0 %}
-                <tr><td><strong> Taxes and Charges Added: </strong></td><td>{{ doc.taxes_and_charges_added }}</td></tr>
+
+                {% if doc.taxes_and_charges_added != 0 %}
+                <tr>
+                    <td class="label-cell"><strong>{{ _("مالیات و عوارض اضافه‌شده") }}:</strong></td>
+                    <td>{{ format_number(doc.taxes_and_charges_added or 0, 0) }}</td>
+                </tr>
                 {% endif %}
-                {% if doc.taxes_and_charges_deducted!= 0 %}
-                <tr><td><strong> Taxes and Charges Deducted: </strong></td><td>{{ doc.taxes_and_charges_deducted }}</td></tr>
+
+                {% if doc.taxes_and_charges_deducted != 0 %}
+                <tr>
+                    <td class="label-cell"><strong>{{ _("مالیات و عوارض کسرشده") }}:</strong></td>
+                    <td>{{ format_number(doc.taxes_and_charges_deducted or 0, 0) }}</td>
+                </tr>
                 {% endif %}
-                <tr><td><strong> Total Taxes and Charges: </strong></td><td>{{ doc.total_taxes_and_charges }}</td></tr>
-                <tr><td><strong> Net Payable: </strong></td><td>{{ doc.grand_total }}</td></tr>
+
+                <tr>
+                    <td class="label-cell"><strong>{{ _("جمع کل مالیات و عوارض") }}:</strong></td>
+                    <td>{{ format_number(doc.total_taxes_and_charges or 0, 0) }}</td>
+                </tr>
+                <tr>
+                    <td class="label-cell"><strong>{{ _("خالص پرداختنی") }}:</strong></td>
+                    <td>{{ format_number(doc.grand_total or 0, 0) }}</td>
+                </tr>
             </table>
         </div>
     </div>
+
     <div class="margin-top">
-        <table class='table table-bordered table-condensed'>
+        <table class="table table-bordered table-condensed">
             <tr>
-                <th>SL</th>
-                <th>Account</th>
-                <th>Party Type</th>
-                <th>Party</th>
-                <th>Debit Amount</th>
-                <th>Credit Amount</th>
+                <th class="text-center" style="width: 50px;">{{ _("ردیف") }}</th>
+                <th>{{ _("حساب") }}</th>
+                <th>{{ _("نوع طرف حساب") }}</th>
+                <th>{{ _("طرف حساب") }}</th>
+                <th>{{ _("مبلغ بدهکار") }}</th>
+                <th>{{ _("مبلغ بستانکار") }}</th>
             </tr>
             {% for entries in gl %}
             <tr>
-                <td>{{ loop.index }}</td>
-                <td>{{ entries.account }}</td>
-                <td>{{ entries.party_type }}</td>
-                <td>{{ entries.party }}</td>
-                <td>{{ entries.debit }}</td>
-                <td>{{ entries.credit }}</td>
+                <td class="text-center">{{ to_persian_digits(loop.index) }}</td>
+                <td>{{ entries.account or "" }}</td>
+                <td>{{ entries.party_type or "" }}</td>
+                <td>{{ entries.party or "" }}</td>
+                <td>{{ format_number(entries.debit or 0, 0) }}</td>
+                <td>{{ format_number(entries.credit or 0, 0) }}</td>
             </tr>
             {% endfor %}
             <tr>
-                <td colspan="4"><strong>Total</strong></td>
-                <td>{{ doc.grand_total|flt }}</td>
-                <td>{{ doc.grand_total|flt }}</td>
+                <td colspan="4"><strong>{{ _("جمع") }}</strong></td>
+                <td>{{ format_number(doc.grand_total or 0, 0) }}</td>
+                <td>{{ format_number(doc.grand_total or 0, 0) }}</td>
             </tr>
         </table>
     </div>

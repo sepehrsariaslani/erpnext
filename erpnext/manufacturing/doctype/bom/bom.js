@@ -688,7 +688,9 @@ erpnext.bom.BomController = class BomController extends erpnext.TransactionContr
 	}
 
 	plc_conversion_rate(doc) {
-		if (!this.in_apply_price_list && doc.rm_cost_as_per === "Price List") {
+		// Check if rm_cost_as_per exists and is "Price List"
+		if (!this.in_apply_price_list && doc && doc.rm_cost_as_per && 
+			doc.rm_cost_as_per === "Price List") {
 			this.apply_price_list(null, true);
 		}
 	}

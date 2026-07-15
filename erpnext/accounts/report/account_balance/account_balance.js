@@ -61,5 +61,11 @@ frappe.query_reports["Account Balance"] = {
 				{ value: "Temporary", label: __("Temporary") },
 			],
 		},
+		{
+			fieldname: "include_memorandum_accounts",
+			label: __("Include Memorandum Accounts"),
+			fieldtype: "Check",
+			default: 0,
+		},
 	],
 };

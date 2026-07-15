@@ -183,6 +183,7 @@
    "oldfieldtype": "Check"
   },
   {
+    "allow_on_submit": 1,
    "default": "0",
    "description": "Manage cost of operations",
    "fieldname": "with_operations",
@@ -278,6 +279,7 @@
    "oldfieldtype": "Section Break"
   },
   {
+    "allow_on_submit": 1,
    "depends_on": "with_operations",
    "fieldname": "routing",
    "fieldtype": "Link",
@@ -285,6 +287,7 @@
    "options": "Routing"
   },
   {
+   "allow_on_submit": 1,
    "depends_on": "with_operations",
    "fieldname": "operations",
    "fieldtype": "Table",

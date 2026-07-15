@@ -4,17 +4,35 @@
 
 from frappe import _
 
-from erpnext.controllers.trends import get_columns, get_data
+from erpnext.controllers.trends import (
+	apply_jalali_period_labels_to_chart,
+	clean_period_label_for_chart,
+	collapse_period_columns_to_amount_only,
+	convert_period_columns_to_jalali,
+	get_columns,
+	get_data,
+	get_period_start_index,
+	is_jalali_calendar_mode,
+)
 
 
 def execute(filters=None):
 	if not filters:
 		filters = {}
-	data = []
-	conditions = get_columns(filters, "Quotation")
-	data = get_data(filters, conditions)
 
+	conditions = get_columns(filters, "Quotation")
+	jalali_mode = is_jalali_calendar_mode(filters)
+	if jalali_mode:
+		conditions["columns"] = convert_period_columns_to_jalali(conditions.get("columns") or [], filters)
+
+	data = get_data(filters, conditions)
 	chart_data = get_chart_data(data, conditions, filters)
+
+	if jalali_mode:
+		apply_jalali_period_labels_to_chart(chart_data, filters)
+		conditions["columns"], data = collapse_period_columns_to_amount_only(
+			conditions.get("columns") or [], data, filters
+		)
 
 	return conditions["columns"], data, None, chart_data
 
@@ -23,33 +41,19 @@ def get_chart_data(data, conditions, filters):
 	if not (data and conditions):
 		return []
 
-	datapoints = []
-
-	if filters.get("based_on") in ["Customer"]:
-		start = 3
-	elif filters.get("based_on") in ["Item"]:
-		start = 2
-	else:
-		start = 1
-
-	if filters.get("group_by"):
-		start += 1
-
-	# fetch only periodic columns as labels
-	columns = conditions.get("columns")[start:-2][2::2]
-	labels = [column.split(":")[0] for column in columns]
+	start = get_period_start_index(filters)
+	period_amount_columns = (conditions.get("columns") or [])[start:-2][1::2]
+	labels = [clean_period_label_for_chart(column.split(":")[0]) for column in period_amount_columns]
 	datapoints = [0] * len(labels)
 
 	for row in data:
 		# If group by filter, don't add first row of group (it's already summed)
 		if not row[start]:
 			continue
-		# Remove None values and compute only periodic data
-		row = [x if x else 0 for x in row[start:-2]]
-		row = row[2::2]
-
-		for i in range(len(row)):
-			datapoints[i] += row[i]
+		# Remove None values and compute only periodic amount data
+		amount_values = [x if x else 0 for x in row[start:-2]][1::2]
+		for i, value in enumerate(amount_values):
+			datapoints[i] += value
 
 	return {
 		"data": {

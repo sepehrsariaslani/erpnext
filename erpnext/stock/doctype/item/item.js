@@ -788,11 +788,12 @@ $.extend(erpnext.item, {
 							Object.keys(selected_attributes).map((key) => {
 								lengths.push(selected_attributes[key].length);
 							});
-							if (lengths.includes(0)) {
+							if (lengths.length === 0 || lengths.every(length => length === 0)) {
 								me.multiple_variant_dialog.get_primary_btn().html(__("Create Variants"));
 								me.multiple_variant_dialog.disable_primary_action();
 							} else {
-								let no_of_combinations = lengths.reduce((a, b) => a * b, 1);
+								let filtered_lengths = lengths.filter(length => length > 0);
+								let no_of_combinations = filtered_lengths.length > 0 ? filtered_lengths.reduce((a, b) => a * b, 1) : 0;
 								let msg;
 								if (no_of_combinations === 1) {
 									msg = __("Make {0} Variant", [no_of_combinations]);

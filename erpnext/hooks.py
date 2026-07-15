@@ -36,6 +36,7 @@ web_include_icons = [
 ]
 
 doctype_js = {
+	"BOM": "public/js/bom_fix.js",
 	"Address": "public/js/address.js",
 	"Communication": "public/js/communication.js",
 	"Event": "public/js/event.js",
@@ -353,6 +354,13 @@ doc_events = {
 	"Stock Entry": {
 		"on_submit": "erpnext.stock.doctype.material_request.material_request.update_completed_and_requested_qty",
 		"on_cancel": "erpnext.stock.doctype.material_request.material_request.update_completed_and_requested_qty",
+	},
+	"Company": {
+		"after_insert": "erpnext.regional.iran.memorandum_accounts.ensure_memorandum_accounts_for_iran_company",
+		"on_update": "erpnext.regional.iran.memorandum_accounts.ensure_memorandum_accounts_for_iran_company",
+	},
+	"Journal Entry": {
+		"validate": "erpnext.regional.iran.memorandum_accounts.validate_memorandum_journal_entry",
 	},
 	"User": {
 		"after_insert": "frappe.contacts.doctype.contact.contact.update_contact",

@@ -15,6 +15,7 @@ from erpnext.accounts.doctype.accounting_dimension.accounting_dimension import (
 from erpnext.accounts.report.financial_statements import get_cost_centers_with_children
 from erpnext.accounts.report.utils import convert_to_presentation_currency, get_currency
 from erpnext.accounts.utils import get_account_currency
+from erpnext.regional.iran.memorandum_accounts import has_memorandum_field
 
 DEBIT_CREDIT_DICT = {
 	"debit": 0.0,
@@ -339,8 +340,17 @@ def get_conditions(filters):
 							dimension.document_type, filters.get(dimension.fieldname)
 						)
 						conditions.append(f"{dimension.fieldname} in %({dimension.fieldname})s")
-					else:
-						conditions.append(f"{dimension.fieldname} in %({dimension.fieldname})s")
+				else:
+					conditions.append(f"{dimension.fieldname} in %({dimension.fieldname})s")
+
+	if has_memorandum_field():
+		conditions.append(
+			"""exists(
+				select name from `tabAccount`
+				where `tabAccount`.name=`tabGL Entry`.account
+				and ifnull(`tabAccount`.is_memorandum, 0)=0
+			)"""
+		)
 
 	return "and {}".format(" and ".join(conditions)) if conditions else ""
 

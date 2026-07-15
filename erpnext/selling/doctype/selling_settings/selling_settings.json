@@ -11,25 +11,22 @@
   "customer_group",
   "column_break_4",
   "territory",
-  "item_price_tab",
   "item_price_settings_section",
   "selling_price_list",
   "maintain_same_rate_action",
   "role_to_override_stop_action",
   "column_break_15",
   "maintain_same_sales_rate",
-  "fallback_to_default_price_list",
   "editable_price_list_rate",
   "validate_selling_price",
   "editable_bundle_item_rates",
   "allow_negative_rates_for_items",
-  "transaction_tab",
   "sales_transactions_settings_section",
   "so_required",
   "dn_required",
   "sales_update_frequency",
   "blanket_order_allowance",
-  "enable_tracking_sales_commissions",
+  "max_structure_disscount",
   "column_break_5",
   "allow_multiple_items",
   "allow_against_multiple_purchase_orders",
@@ -37,19 +34,13 @@
   "dont_reserve_sales_order_qty_on_sales_return",
   "hide_tax_id",
   "enable_discount_accounting",
-  "enable_cutoff_date_on_bulk_delivery_note_creation",
   "allow_zero_qty_in_quotation",
   "allow_zero_qty_in_sales_order",
-  "set_zero_rate_for_expired_batch",
-  "section_break_avhb",
-  "enable_utm",
-  "experimental_section",
-  "use_legacy_js_reactivity",
-  "subcontracting_inward_tab",
-  "section_break_zwh6",
-  "allow_delivery_of_overproduced_qty",
-  "column_break_mla9",
-  "deliver_secondary_items"
+  "\u062a\u0646\u0638\u06cc\u0645\u0627\u062a_\u062d\u0633\u0627\u0628\u062f\u0627\u0631\u06cc_\u0641\u0631\u0648\u0634_section",
+  "commission_expense",
+  "commission_payable",
+  "column_break_tgmz",
+  "employee_payable"
  ],
  "fields": [
   {
@@ -65,7 +56,6 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Default Customer Group",
-   "link_filters": "[[\"Customer Group\", \"is_group\", \"=\", 0]]",
    "options": "Customer Group"
   },
   {
@@ -99,7 +89,7 @@
    "options": "No\nYes"
   },
   {
-   "default": "Daily",
+   "default": "Each Transaction",
    "description": "How often should Project and Company be updated based on Sales Transactions?",
    "fieldname": "sales_update_frequency",
    "fieldtype": "Select",
@@ -221,17 +211,6 @@
   },
   {
    "default": "0",
-   "fieldname": "enable_cutoff_date_on_bulk_delivery_note_creation",
-   "fieldtype": "Check",
-   "label": "Enable Cut-Off Date on Bulk Delivery Note Creation"
-  },
-  {
-   "fieldname": "experimental_section",
-   "fieldtype": "Section Break",
-   "label": "Experimental"
-  },
-  {
-   "default": "0",
    "description": "Allows users to submit Sales Orders with zero quantity. Useful when rates are fixed but the quantities are not. Eg. Rate Contracts.",
    "fieldname": "allow_zero_qty_in_sales_order",
    "fieldtype": "Check",
@@ -245,91 +224,45 @@
    "label": "Allow Quotation with Zero Quantity"
   },
   {
-   "fieldname": "section_break_zwh6",
+   "fieldname": "max_structure_disscount",
+   "fieldtype": "Percent",
+   "label": "\u062d\u062f\u0627\u06a9\u062b\u0631 \u062a\u062e\u0641\u06cc\u0641 \u0645\u062c\u0627\u0632 \u0632\u06cc\u0631\u06a9\u0627\u0631"
+  },
+  {
+   "fieldname": "\u062a\u0646\u0638\u06cc\u0645\u0627\u062a_\u062d\u0633\u0627\u0628\u062f\u0627\u0631\u06cc_\u0641\u0631\u0648\u0634_section",
    "fieldtype": "Section Break",
-   "label": "Subcontracting Inward Settings"
+   "label": "\u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u062d\u0633\u0627\u0628\u062f\u0627\u0631\u06cc \u0641\u0631\u0648\u0634"
   },
   {
-   "default": "0",
-   "description": "If enabled, system will allow user to deliver the entire quantity of the finished goods produced against the Subcontracting Inward Order. If disabled, system will allow delivery of only the ordered quantity.",
-   "fieldname": "allow_delivery_of_overproduced_qty",
-   "fieldtype": "Check",
-   "label": "Allow Delivery of Overproduced Qty"
+   "fieldname": "commission_expense",
+   "fieldtype": "Link",
+   "label": "\u062d\u0633\u0627\u0628 \u0647\u0632\u06cc\u0646\u0647 \u06a9\u0645\u06cc\u0633\u06cc\u0648\u0646",
+   "options": "Account"
   },
   {
-   "fieldname": "column_break_mla9",
+   "fieldname": "column_break_tgmz",
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "item_price_tab",
-   "fieldtype": "Tab Break",
-   "label": "Item Price"
+   "fieldname": "commission_payable",
+   "fieldtype": "Link",
+   "label": "\u062d\u0633\u0627\u0628 \u06a9\u0645\u06cc\u0633\u06cc\u0648\u0646 \u067e\u0631\u062f\u0627\u062e\u062a\u0646\u06cc",
+   "options": "Account"
   },
   {
-   "fieldname": "transaction_tab",
-   "fieldtype": "Tab Break",
-   "label": "Transaction"
-  },
-  {
-   "fieldname": "subcontracting_inward_tab",
-   "fieldtype": "Tab Break",
-   "label": "Subcontracting Inward"
-  },
-  {
-   "default": "0",
-   "fieldname": "fallback_to_default_price_list",
-   "fieldtype": "Check",
-   "label": "Use Prices from Default Price List as Fallback"
-  },
-  {
-   "default": "0",
-   "fieldname": "use_legacy_js_reactivity",
-   "fieldtype": "Check",
-   "label": "Use Legacy (Client side) Reactivity"
-  },
-  {
-   "default": "0",
-   "description": "If enabled, system will set incoming rate as zero for stand-alone credit notes with expired batch item.",
-   "fieldname": "set_zero_rate_for_expired_batch",
-   "fieldtype": "Check",
-   "label": "Set Incoming Rate as Zero for Expired Batch"
-  },
-  {
-   "default": "0",
-   "description": "Manage sales partner's and sales team's commissions",
-   "fieldname": "enable_tracking_sales_commissions",
-   "fieldtype": "Check",
-   "label": "Enable tracking sales commissions"
-  },
-  {
-   "fieldname": "section_break_avhb",
-   "fieldtype": "Section Break",
-   "label": "Analytics"
-  },
-  {
-   "default": "0",
-   "description": "Enable Urchin Tracking Module parameters in Quotation, Sales Order, Sales Invoice, POS Invoice, Lead,  and Delivery Note.",
-   "documentation_url": "https://en.wikipedia.org/wiki/UTM_parameters",
-   "fieldname": "enable_utm",
-   "fieldtype": "Check",
-   "label": "Enable UTM"
-  },
-  {
-   "default": "0",
-   "description": "If enabled, the Secondary Items generated against a Finished Good will also be added in the Stock Entry when delivering that Finished Good.",
-   "fieldname": "deliver_secondary_items",
-   "fieldtype": "Check",
-   "label": "Deliver Secondary Items"
+   "fieldname": "employee_payable",
+   "fieldtype": "Link",
+   "label": "\u062d\u0633\u0627\u0628 \u067e\u0631\u062f\u0627\u062e\u062a\u0646\u06cc \u0628\u0647 \u06a9\u0627\u0631\u0645\u0646\u062f",
+   "options": "Account"
   }
  ],
  "grid_page_length": 50,
- "hide_toolbar": 0,
  "icon": "fa fa-cog",
  "idx": 1,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-03-16 13:28:18.988883",
+ "modified": "2025-09-04 09:14:23.738208",
  "modified_by": "Administrator",
  "module": "Selling",
  "name": "Selling Settings",
@@ -355,7 +288,7 @@
   }
  ],
  "row_format": "Dynamic",
- "sort_field": "creation",
+ "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
  "track_changes": 1

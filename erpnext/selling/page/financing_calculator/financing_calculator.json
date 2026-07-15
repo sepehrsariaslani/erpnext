@@ -1,0 +1,29 @@
+{
+ "content": null,
+ "creation": "2025-08-26 22:16:44.400828",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2025-08-26 22:16:44.400828",
+ "modified_by": "Administrator",
+ "module": "Installment Calculator",
+ "name": "financing-calculator",
+ "owner": "Administrator",
+ "page_name": "financing-calculator",
+ "roles": [
+  {
+   "role": "Sales User"
+  },
+  {
+   "role": "Sales Manager"
+  },
+  {
+   "role": "System Manager"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "طرح اقساط"
+}

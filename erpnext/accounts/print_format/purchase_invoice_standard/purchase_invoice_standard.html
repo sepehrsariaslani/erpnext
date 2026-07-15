@@ -1,0 +1,436 @@
+{%- macro to_persian_digits(value) -%}
+	{%- if value is none -%}
+		{{ "" }}
+	{%- else -%}
+		{{ value|string
+			|replace("0","۰")
+			|replace("1","۱")
+			|replace("2","۲")
+			|replace("3","۳")
+			|replace("4","۴")
+			|replace("5","۵")
+			|replace("6","۶")
+			|replace("7","۷")
+			|replace("8","۸")
+			|replace("9","۹")
+		}}
+	{%- endif -%}
+{%- endmacro -%}
+
+{%- macro format_in_words(value) -%}
+	{%- if not value -%}
+		{{ "" }}
+	{%- else -%}
+		{%- set text = value|string
+			|replace("IRR", "")
+			|replace("irr", "")
+			|replace("فقط", "")
+			|replace("ریال", "")
+			|replace("ريال", "")
+			|replace(".", "")
+			|replace(",", "")
+			|trim
+		-%}
+
+		{%- if text -%}
+			{{ text }} ریال
+		{%- endif -%}
+	{%- endif -%}
+{%- endmacro -%}
+
+
+{%- macro format_number(value) -%}
+	{%- if value is none or value == "" -%}
+		{{ "" }}
+	{%- else -%}
+		{%- set num = frappe.utils.flt(value) -%}
+		{%- set formatted = "{:,.0f}".format(num).replace(",", ".") -%}
+		{{ to_persian_digits(formatted) }}
+	{%- endif -%}
+{%- endmacro -%}
+
+{%- macro jalali_date(date_value) -%}
+	{%- if not date_value -%}
+		{{ "" }}
+	{%- else -%}
+		{%- set g = frappe.utils.getdate(date_value) -%}
+		{%- set gy = g.year -%}
+		{%- set gm = g.month -%}
+		{%- set gd = g.day -%}
+
+		{%- set gdm = [0,31,59,90,120,151,181,212,243,273,304,334] -%}
+		{%- set gy2 = gy + 1 if gm > 2 else gy -%}
+		{%- set days = 355666 + (365 * gy) + ((gy2 + 3) // 4) - ((gy2 + 99) // 100) + ((gy2 + 399) // 400) + gd + gdm[gm - 1] -%}
+
+		{%- set jy = -1595 + (33 * (days // 12053)) -%}
+		{%- set days = days % 12053 -%}
+
+		{%- set jy = jy + (4 * (days // 1461)) -%}
+		{%- set days = days % 1461 -%}
+
+		{%- if days > 365 -%}
+			{%- set jy = jy + ((days - 1) // 365) -%}
+			{%- set days = (days - 1) % 365 -%}
+		{%- endif -%}
+
+		{%- if days < 186 -%}
+			{%- set jm = 1 + (days // 31) -%}
+			{%- set jd = 1 + (days % 31) -%}
+		{%- else -%}
+			{%- set jm = 7 + ((days - 186) // 30) -%}
+			{%- set jd = 1 + ((days - 186) % 30) -%}
+		{%- endif -%}
+
+		{%- set jm_str = "0" ~ jm if jm < 10 else jm|string -%}
+		{%- set jd_str = "0" ~ jd if jd < 10 else jd|string -%}
+
+		{{ to_persian_digits(jy ~ "/" ~ jm_str ~ "/" ~ jd_str) }}
+	{%- endif -%}
+{%- endmacro -%}
+
+{%- macro add_header(page_num, max_pages, doc, letter_head, no_letterhead, footer, print_settings=None, print_heading_template=None) -%}
+	{% if letter_head and not no_letterhead %}
+		<div class="letter-head">{{ letter_head }}</div>
+	{% endif %}
+	{% if print_heading_template %}
+		{{ frappe.render_template(print_heading_template, {"doc": doc}) }}
+	{% endif %}
+{%- endmacro -%}
+
+{% for page in layout %}
+<div class="page-break order-wrapper">
+
+	<div {% if print_settings.repeat_header_footer %} id="header-html" class="hidden-pdf" {% endif %}>
+		{{ add_header(loop.index, layout|len, doc, letter_head, no_letterhead, footer, print_settings) }}
+	</div>
+
+	{% if doc.meta.is_submittable and doc.docstatus == 2 %}
+		<div class="text-center">
+			<h4>لغو شده</h4>
+		</div>
+	{% endif %}
+
+	{% if doc.meta.is_submittable and doc.docstatus == 0 and (print_settings == None or print_settings.add_draft_heading) %}
+		<div class="text-center">
+			<h4>پیش‌نویس</h4>
+		</div>
+	{% endif %}
+
+	<style>
+		body {
+			direction: rtl;
+		}
+
+		.order-wrapper {
+			direction: rtl;
+			text-align: right;
+			font-family: Tahoma, Arial, sans-serif;
+			font-size: 14px;
+			color: #222;
+		}
+
+		.print-format {
+			direction: rtl;
+			text-align: right;
+			font-size: 14px;
+			padding: 0;
+		}
+
+		.print-format-body {
+			padding: 20px 10px;
+		}
+
+		table {
+			width: 100%;
+			border-collapse: collapse;
+		}
+
+		td, th {
+			border: 1px solid #ddd;
+			padding: 7px 8px;
+			vertical-align: top;
+		}
+
+		.no-border td {
+			border: none;
+		}
+
+		.info-table td {
+			width: 50%;
+		}
+
+		.items-table th {
+			background: #f5f5f5;
+			font-weight: bold;
+			text-align: center;
+		}
+
+		.items-table td {
+			text-align: right;
+		}
+
+		.text-center {
+			text-align: center !important;
+		}
+
+		.text-left {
+			text-align: left !important;
+		}
+
+		.text-right {
+			text-align: right !important;
+		}
+
+		.desc-col {
+			width: 32%;
+			min-width: 180px;
+			line-height: 1.8;
+		}
+
+		.amount-col {
+			width: 100px;
+			white-space: nowrap;
+		}
+
+		.title {
+			font-weight: bold;
+			color: #555;
+		}
+
+		.section-title {
+			margin-top: 18px;
+			margin-bottom: 6px;
+			font-weight: bold;
+		}
+
+		.totals-table {
+			width: 40%;
+			margin-right: auto;
+			margin-top: 15px;
+		}
+
+		.totals-table td:first-child {
+			background: #f8f8f8;
+			font-weight: bold;
+		}
+
+		.words-box {
+			margin-top: 15px;
+			background: #f8f8f8;
+			border: 1px solid #ddd;
+			padding: 10px;
+			line-height: 1.8;
+		}
+	</style>
+
+	<div class="print-format-body">
+
+		<table class="info-table">
+			<tr>
+				<td>
+					<span class="title">نام تأمین‌کننده:</span>
+					{{ doc.supplier_name or doc.supplier or "" }}
+				</td>
+				<td>
+					<span class="title">شماره فاکتور:</span>
+					{{ to_persian_digits(doc.name) }}
+				</td>
+			</tr>
+
+			<tr>
+				<td>
+					<span class="title">تاریخ فاکتور:</span>
+					{{ jalali_date(doc.posting_date) }}
+				</td>
+				<td>
+					<span class="title">تاریخ سررسید:</span>
+					{{ jalali_date(doc.due_date) }}
+				</td>
+			</tr>
+
+			<tr>
+				<td>
+					<span class="title">آدرس تأمین‌کننده:</span><br>
+					{% if doc.supplier_address %}
+						{% set supplier_address = frappe.db.get_value(
+							"Address",
+							doc.supplier_address,
+							["address_line1", "address_line2", "city", "state", "pincode", "country"],
+							as_dict=True
+						) %}
+
+						{{ doc.supplier_name or "" }}<br>
+						{{ supplier_address.address_line1 or "" }}<br>
+						{% if supplier_address.address_line2 %}
+							{{ supplier_address.address_line2 }}<br>
+						{% endif %}
+						{{ supplier_address.city or "" }}
+						{{ supplier_address.state or "" }}
+						{{ to_persian_digits(supplier_address.pincode or "") }}
+						{{ supplier_address.country or "" }}
+					{% endif %}
+				</td>
+
+				<td>
+					<span class="title">آدرس شرکت:</span><br>
+					{% if doc.billing_address %}
+						{% set billing_address = frappe.db.get_value(
+							"Address",
+							doc.billing_address,
+							["address_line1", "address_line2", "city", "state", "pincode", "country"],
+							as_dict=True
+						) %}
+
+						{{ doc.company or "" }}<br>
+						{{ billing_address.address_line1 or "" }}<br>
+						{% if billing_address.address_line2 %}
+							{{ billing_address.address_line2 }}<br>
+						{% endif %}
+						{{ billing_address.city or "" }}
+						{{ billing_address.state or "" }}
+						{{ to_persian_digits(billing_address.pincode or "") }}
+						{{ billing_address.country or "" }}
+					{% endif %}
+				</td>
+			</tr>
+		</table>
+
+		<div class="section-title">اقلام فاکتور</div>
+
+		{% set item_naming_by = frappe.db.get_single_value("Stock Settings", "item_naming_by") %}
+
+		<table class="items-table">
+			<thead>
+				<tr>
+					<th style="width: 45px;">ردیف</th>
+					<th style="width: 18%;">کالا</th>
+					<th style="width: 12%;">کد کالا</th>
+					<th class="desc-col">توضیحات</th>
+					<th style="width: 90px;">تعداد</th>
+					<th class="amount-col">نرخ</th>
+					<th class="amount-col">مبلغ</th>
+
+				</tr>
+			</thead>
+
+			<tbody>
+				{% for item in doc.items %}
+				<tr>
+					<td class="text-center">
+						{{ to_persian_digits(loop.index) }}
+					</td>
+
+						<td>
+							{{ item.item_name or "" }}
+						</td>
+
+						<td>
+							{{ to_persian_digits(item.item_code or "") }}
+						</td>
+
+						<td class="desc-col">
+							&nbsp;
+						</td>
+
+
+					<td class="text-center">
+						{{ format_number(item.qty or 0) }}
+						{{ item.uom or "" }}
+					</td>
+
+					<td class="text-left">
+						{{ format_number(item.net_rate or item.rate or 0) }}
+					</td>
+
+					<td class="text-left">
+						{{ format_number(item.net_amount or item.amount or 0) }}
+					</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+
+		<table style="margin-top: 15px;">
+			<tr>
+				<td style="width: 58%; border: none; vertical-align: bottom;">
+					<div class="section-title">مبلغ به حروف</div>
+					<div class="words-box">
+						{{ format_in_words(doc.in_words) }}
+					</div>
+				</td>
+
+				<td style="width: 2%; border: none;"></td>
+
+				<td style="width: 40%; border: none;">
+					<table class="totals-table">
+						<tr>
+							<td>جمع جزء:</td>
+							<td class="text-left">{{ format_number(doc.total or 0) }}</td>
+						</tr>
+
+						{% if doc.apply_discount_on == "Net Total" and doc.discount_amount %}
+						<tr>
+							<td>
+								تخفیف
+								{% if doc.additional_discount_percentage %}
+									({{ to_persian_digits(doc.additional_discount_percentage) }}٪)
+								{% endif %}
+								:
+							</td>
+							<td class="text-left">{{ format_number(doc.discount_amount or 0) }}</td>
+						</tr>
+						{% endif %}
+
+						{% for tax in doc.taxes %}
+							{% if tax.tax_amount or print_settings.print_taxes_with_zero_amount %}
+							<tr>
+								<td>
+									{{ tax.description or tax.account_head }}
+									{% if tax.rate %}
+										({{ format_number(tax.rate) }}٪)
+									{% endif %}
+									:
+								</td>
+								<td class="text-left">
+									{{ format_number(tax.tax_amount or 0) }}
+								</td>
+							</tr>
+							{% endif %}
+						{% endfor %}
+
+						{% if doc.apply_discount_on == "Grand Total" and doc.discount_amount %}
+						<tr>
+							<td>
+								تخفیف
+								{% if doc.additional_discount_percentage %}
+									({{ to_persian_digits(doc.additional_discount_percentage) }}٪)
+								{% endif %}
+								:
+							</td>
+							<td class="text-left">{{ format_number(doc.discount_amount or 0) }}</td>
+						</tr>
+						{% endif %}
+
+						<tr>
+							<td>جمع کل:</td>
+							<td class="text-left">
+								<strong>{{ format_number(doc.grand_total or 0) }}</strong>
+							</td>
+						</tr>
+					</table>
+				</td>
+			</tr>
+		</table>
+
+		{% if doc.terms %}
+		<div style="margin-top: 25px;">
+			<div class="section-title">شرایط و ضوابط</div>
+			<div>
+				{{ doc.terms }}
+			</div>
+		</div>
+		{% endif %}
+
+	</div>
+</div>
+{% endfor %}

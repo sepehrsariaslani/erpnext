@@ -8,6 +8,8 @@ import frappe
 from frappe import _
 from frappe.query_builder.functions import IfNull, Sum
 from frappe.utils import add_months, cstr, flt, formatdate, getdate, nowdate, today
+from frappe.utils import get_first_day, formatdate
+
 
 from erpnext.accounts.report.financial_statements import (
 	get_fiscal_year_data,
@@ -196,7 +198,7 @@ def prepare_chart_data(data, filters):
 	for d in data:
 		if d.get(date_field):
 			date = d.get(date_field)
-			belongs_to_month = formatdate(date, "MMM YYYY")
+			belongs_to_month = formatdate(date, "MMM YYYY", locale="en")
 
 			labels_values_map[belongs_to_month].asset_value += d.get("asset_value")
 			labels_values_map[belongs_to_month].depreciated_amount += d.get("depreciated_amount")

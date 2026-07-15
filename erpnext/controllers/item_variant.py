@@ -267,55 +267,30 @@ def create_multiple_variants(item, args, use_template_image=False):
 
 
 def generate_keyed_value_combinations(args):
-	"""
-	From this:
+    if not args:
+        return []
 
-	        args = {"attr1": ["a", "b", "c"], "attr2": ["1", "2"], "attr3": ["A"]}
+    # فقط attributeهایی که مقادیر دارند را در نظر بگیر
+    key_value_lists = [[(key, val) for val in args[key]] for key in args.keys() if args[key]]
 
-	To this:
+    if not key_value_lists:
+        return []
 
-	        [
-	                {u'attr1': u'a', u'attr2': u'1', u'attr3': u'A'},
-	                {u'attr1': u'b', u'attr2': u'1', u'attr3': u'A'},
-	                {u'attr1': u'c', u'attr2': u'1', u'attr3': u'A'},
-	                {u'attr1': u'a', u'attr2': u'2', u'attr3': u'A'},
-	                {u'attr1': u'b', u'attr2': u'2', u'attr3': u'A'},
-	                {u'attr1': u'c', u'attr2': u'2', u'attr3': u'A'}
-	        ]
+    # شروع با اولین attribute
+    results = [{d[0]: d[1]} for d in key_value_lists.pop(0)]
 
-	"""
-	# Return empty list if empty
-	if not args:
-		return []
+    # ترکیب با بقیه attributeها
+    for l in key_value_lists:
+        new_results = []
+        for res in results:
+            for key_val in l:
+                obj = copy.deepcopy(res)
+                obj[key_val[0]] = key_val[1]
+                new_results.append(obj)
+        results = new_results
 
-	# Turn `args` into a list of lists of key-value tuples:
-	# [
-	# 	[(u'attr2', u'1'), (u'attr2', u'2')],
-	# 	[(u'attr3', u'A')],
-	# 	[(u'attr1', u'a'), (u'attr1', u'b'), (u'attr1', u'c')]
-	# ]
-	key_value_lists = [[(key, val) for val in args[key]] for key in args.keys()]
+    return results
 
-	# Store the first, but as objects
-	# [{u'attr2': u'1'}, {u'attr2': u'2'}]
-	results = key_value_lists.pop(0)
-	results = [{d[0]: d[1]} for d in results]
-
-	# Iterate the remaining
-	# Take the next list to fuse with existing results
-	for l in key_value_lists:
-		new_results = []
-		for res in results:
-			for key_val in l:
-				# create a new clone of object in result
-				obj = copy.deepcopy(res)
-				# to be used with every incoming new value
-				obj[key_val[0]] = key_val[1]
-				# and pushed into new_results
-				new_results.append(obj)
-		results = new_results
-
-	return results
 
 
 def copy_attributes_to_variant(item, variant):
@@ -398,8 +373,10 @@ def make_variant_item_code(template_item_code, template_item_name, variant):
 		abbreviations.append(abbr_or_value)
 
 	if abbreviations:
-		variant.item_code = "{}-{}".format(template_item_code, "-".join(abbreviations))
-		variant.item_name = "{}-{}".format(template_item_name, "-".join(abbreviations))
+		attribute_suffix = " ".join(cstr(value).strip() for value in abbreviations if cstr(value).strip())
+		if attribute_suffix:
+			variant.item_code = "{} {}".format(cstr(template_item_code).strip(), attribute_suffix).strip()
+			variant.item_name = "{} {}".format(cstr(template_item_name).strip(), attribute_suffix).strip()
 
 
 @frappe.whitelist()

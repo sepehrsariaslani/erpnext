@@ -167,18 +167,19 @@ class WorkOrder(Document):
 				self.set_onload("backflush_raw_materials_based_on", based_on)
 
 	def show_create_job_card_button(self):
-		operation_details = frappe._dict(
-			frappe.get_all(
-				"Job Card",
-				fields=["operation", {"SUM": "for_quantity"}],
-				filters={"docstatus": ("<", 2), "work_order": self.name},
-				as_list=1,
-				group_by="operation_id",
-			)
+		jc_doctype = frappe.qb.DocType("Job Card")
+		query = (
+			frappe.qb.from_(jc_doctype)
+			.select(jc_doctype.operation_id, Sum(jc_doctype.for_quantity - IfNull(jc_doctype.pending_qty, 0)))
+			.where((jc_doctype.docstatus < 2) & (jc_doctype.work_order == self.name))
+			.groupby(jc_doctype.operation_id)
 		)
 
+		operation_details = query.run(as_list=1)
+		operation_details = frappe._dict(operation_details)
+
 		for d in self.operations:
-			job_card_qty = self.qty - flt(operation_details.get(d.operation))
+			job_card_qty = self.qty - flt(operation_details.get(d.name))
 			if job_card_qty > 0:
 				return True
 
@@ -201,7 +202,7 @@ class WorkOrder(Document):
 		self.calculate_operating_cost()
 		self.validate_qty()
 		self.validate_transfer_against()
-		self.validate_operation_time()
+		self.validate_operations()
 		self.status = self.get_status()
 		self.validate_workstation_type()
 		self.reset_use_multi_level_bom()
@@ -1498,8 +1499,11 @@ class WorkOrder(Document):
 				title=_("Missing value"),
 			)
 
-	def validate_operation_time(self):
+	def validate_operations(self):
 		for d in self.operations:
+			if not d.batch_size or d.batch_size <= 0:
+				d.batch_size = 1
+
 			if d.time_in_mins <= 0:
 				frappe.throw(_("Operation Time must be greater than 0 for Operation {0}").format(d.operation))
 

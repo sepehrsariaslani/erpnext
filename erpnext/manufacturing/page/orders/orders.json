@@ -1,0 +1,12 @@
+{
+  "doctype": "Page",
+  "name": "orders",
+  "page_name": "orders",
+  "title": "Employee Productivity",
+  "module": "Manufacturing",
+  "type": "page",
+  "icon": "fa fa-chart-line",
+  "hide_title": 0,
+  "single_column": 1,
+  "hide_custom": 0
+}
