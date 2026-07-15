@@ -88,8 +88,8 @@ frappe.ui.form.on("Work Order", {
 			return frm.doc.qty == doc.completed_qty ? "green" : "orange";
 		});
 
-		frm.fields_dict["non_stock_items"].grid.set_column_disp_in_list_view("type", false);
-		frm.fields_dict["secondary_items"].grid.set_column_disp_in_list_view("rate", false);
+		frm.fields_dict["non_stock_items"].grid.set_column_disp("type", false);
+		frm.fields_dict["secondary_items"].grid.set_column_disp("rate", false);
 	},
 
 	set_company_filters(frm, fieldname) {

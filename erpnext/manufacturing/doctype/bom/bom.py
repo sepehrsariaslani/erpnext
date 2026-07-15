@@ -403,6 +403,24 @@ class BOM(WebsiteGenerator):
 		doc = frappe.get_doc("BOM Creator", self.bom_creator)
 		doc.set_status(save=True)
 
+	def set_fg_cost_allocation(self):
+		total_secondary_items_per = 0
+		for item in self.secondary_items:
+			total_secondary_items_per += item.cost_allocation_per
+
+		if self.cost_allocation_per == 100 and total_secondary_items_per:
+			self.cost_allocation_per -= total_secondary_items_per
+
+		self.cost_allocation = self.raw_material_cost * (self.cost_allocation_per / 100)
+
+	def validate_total_cost_allocation(self):
+		total_cost_allocation_per = self.cost_allocation_per
+		for item in self.secondary_items:
+			total_cost_allocation_per += item.cost_allocation_per
+
+		if total_cost_allocation_per != 100:
+			frappe.throw(_("Cost allocation between finished goods and secondary items should equal 100%"))
+
 	def on_update_after_submit(self):
 		self.validate_bom_links()
 		self.manage_default_bom()

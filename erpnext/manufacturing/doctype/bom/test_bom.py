@@ -469,6 +469,19 @@ class TestBOM(ERPNextTestSuite):
 		self.assertRaises(frappe.ValidationError, bom_doc.save)
 
 	@timeout
+	def test_fg_cost_allocation_excludes_secondary_items_share(self):
+		bom_doc = frappe.new_doc("BOM")
+		bom_doc.raw_material_cost = 200
+		bom_doc.cost_allocation_per = 100
+		bom_doc.append("secondary_items", {"cost_allocation_per": 25})
+
+		bom_doc.set_fg_cost_allocation()
+		bom_doc.validate_total_cost_allocation()
+
+		self.assertEqual(flt(bom_doc.cost_allocation_per, 6), 75.0)
+		self.assertEqual(flt(bom_doc.cost_allocation, 6), 150.0)
+
+	@timeout
 	def test_bom_item_query(self):
 		query = partial(
 			item_query,
