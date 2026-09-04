@@ -354,6 +354,13 @@ doc_events = {
 		"on_submit": "erpnext.stock.doctype.material_request.material_request.update_completed_and_requested_qty",
 		"on_cancel": "erpnext.stock.doctype.material_request.material_request.update_completed_and_requested_qty",
 	},
+	"Company": {
+		"after_insert": "erpnext.regional.iran.memorandum_accounts.ensure_standard_and_memorandum_accounts",
+		"on_update": "erpnext.regional.iran.memorandum_accounts.ensure_standard_and_memorandum_accounts",
+	},
+	"Journal Entry": {
+		"validate": "erpnext.regional.iran.memorandum_accounts.validate_memorandum_journal_entry",
+	},
 	"User": {
 		"after_insert": "frappe.contacts.doctype.contact.contact.update_contact",
 		"validate": "erpnext.setup.doctype.employee.employee.validate_employee_role",
