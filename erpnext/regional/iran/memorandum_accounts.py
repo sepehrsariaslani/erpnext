@@ -5,6 +5,8 @@ from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.utils import flt
 
+from erpnext.accounts.doctype.account.chart_of_accounts.chart_of_accounts import create_charts
+
 MEMORANDUM_ROOT = "حساب‌های انتظامی"
 MEMORANDUM_CONTROL_GROUP = "حساب انتظامی طرف حساب"
 MEMORANDUM_COUNTER_GROUP = "طرف حساب انتظامی"
@@ -59,16 +61,85 @@ def ensure_memorandum_account_custom_fields():
 		create_custom_fields({"Account": pending_fields}, update=True)
 
 
+def ensure_standard_and_memorandum_accounts(doc, method=None):
+	"""Keep a complete standard chart ahead of Iran memorandum accounts."""
+	company = doc.name if getattr(doc, "doctype", None) == "Company" else doc
+	if not company or not is_iran_company(company):
+		return
+
+	ensure_memorandum_account_custom_fields()
+	if not has_standard_accounts(company):
+		if has_accounting_history(company):
+			frappe.log_error(
+				f"Company: {company}",
+				"Iran Company Chart Repair Requires Review",
+			)
+			return
+		create_standard_chart(company)
+
+	setup_memorandum_accounts_for_company(company)
+
+
+def has_standard_accounts(company):
+	return bool(frappe.db.exists("Account", {"company": company, "is_memorandum": 0}))
+
+
+def has_accounting_history(company):
+	return bool(
+		frappe.db.exists("GL Entry", {"company": company})
+		or frappe.db.exists("Stock Ledger Entry", {"company": company})
+	)
+
+
+def create_standard_chart(company):
+	"""Repair a blank or memorandum-only company with ERPNext's Standard chart."""
+	if has_standard_accounts(company):
+		return
+
+	ensure_standard_account_categories()
+	frappe.local.flags.ignore_root_company_validation = True
+	create_charts(company, "Standard")
+
+	company_doc = frappe.get_doc("Company", company)
+	company_doc.update_default_account = True
+	company_doc.db_set(
+		"default_receivable_account",
+		frappe.db.get_value("Account", {"company": company, "account_type": "Receivable", "is_group": 0}),
+	)
+	company_doc.db_set(
+		"default_payable_account",
+		frappe.db.get_value("Account", {"company": company, "account_type": "Payable", "is_group": 0}),
+	)
+	company_doc.set_default_accounts()
+
+
+def ensure_standard_account_categories():
+	"""Install the categories referenced by ERPNext's Standard chart when missing."""
+	from erpnext.accounts.doctype.account_category.account_category import import_account_categories
+
+	import_account_categories(frappe.get_app_path("erpnext", "accounts", "financial_report_template"))
+
+
+def repair_incomplete_iran_company(company):
+	"""Repair a memorandum-only Iran company that has no accounting history."""
+	if not is_iran_company(company) or has_standard_accounts(company):
+		return False
+	if has_accounting_history(company):
+		frappe.throw(
+			_("Cannot automatically rebuild the chart of accounts after accounting or stock entries exist.")
+		)
+
+	ensure_standard_and_memorandum_accounts(company)
+	return True
+
+
 def has_memorandum_field():
 	return frappe.db.has_column("Account", "is_memorandum")
 
 
 def ensure_memorandum_accounts_for_iran_company(doc, method=None):
 	"""Doc event: keep memorandum accounts available for Iran companies."""
-	company = doc.name if getattr(doc, "doctype", None) == "Company" else doc
-	if not company:
-		return
-	setup_memorandum_accounts_for_company(company)
+	return ensure_standard_and_memorandum_accounts(doc, method)
 
 
 def setup_memorandum_accounts_for_company(company):
@@ -130,7 +201,7 @@ def setup_memorandum_accounts_for_all_iran_companies():
 	"""Backfill memorandum accounts for all Iran companies."""
 	ensure_memorandum_account_custom_fields()
 	for company in frappe.get_all("Company", pluck="name"):
-		setup_memorandum_accounts_for_company(company)
+		ensure_standard_and_memorandum_accounts(company)
 
 
 def validate_memorandum_journal_entry(doc, method=None):
