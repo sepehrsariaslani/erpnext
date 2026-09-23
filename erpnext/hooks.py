@@ -360,7 +360,6 @@ doc_events = {
 		"on_cancel": "erpnext.stock.doctype.material_request.material_request.update_completed_and_requested_qty",
 	},
 	"Company": {
-		"after_insert": "erpnext.regional.iran.memorandum_accounts.ensure_standard_and_memorandum_accounts",
 		"on_update": "erpnext.regional.iran.memorandum_accounts.ensure_standard_and_memorandum_accounts",
 	},
 	"Journal Entry": {

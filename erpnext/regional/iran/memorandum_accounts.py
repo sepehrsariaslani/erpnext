@@ -81,7 +81,17 @@ def ensure_standard_and_memorandum_accounts(doc, method=None):
 
 
 def has_standard_accounts(company):
-	return bool(frappe.db.exists("Account", {"company": company, "is_memorandum": 0}))
+	if not frappe.db.has_column("Account", "is_memorandum"):
+		return bool(frappe.db.exists("Account", {"company": company}))
+
+	return bool(
+		frappe.db.sql(
+			"""select name from `tabAccount`
+			where company=%s and ifnull(is_memorandum, 0)=0
+			limit 1""",
+			company,
+		)
+	)
 
 
 def has_accounting_history(company):
